@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -48,6 +48,7 @@ enum HunterSpells
     SPELL_HUNTER_A_MURDER_OF_CROWS_1                = 131894,
     SPELL_HUNTER_A_MURDER_OF_CROWS_2                = 206505,
     SPELL_HUNTER_A_MURDER_OF_CROWS_DAMAGE           = 131900,
+    SPELL_HUNTER_AIMED_SHOT                         = 19434,
     SPELL_HUNTER_ANIMAL_INSTINCTS                   = 204315,
     SPELL_HUNTER_ANIMAL_INSTINCTS_CHEETAH           = 204324,
     SPELL_HUNTER_ANIMAL_INSTINCTS_MONGOOSE          = 204333,
@@ -55,6 +56,7 @@ enum HunterSpells
     SPELL_HUNTER_ARCANE_SHOT                        = 185358,
     SPELL_HUNTER_ASPECT_OF_THE_CHEETAH_EFFECT_2     = 186258,
     SPELL_HUNTER_ASPECT_OF_THE_EAGLE                = 186289,
+    SPELL_HUNTER_AURA_SHOOTING                      = 224729,
     SPELL_HUNTER_AUTO_SHOT                          = 75,
     SPELL_HUNTER_BARRAGE                            = 120360,
     SPELL_HUNTER_BASIC_ATTACK_COST_MODIFIER         = 62762,
@@ -711,7 +713,7 @@ public:
 
             if (Unit* caster = GetCaster())
             {
-                uint32 spec = caster->GetUInt32Value(PLAYER_FIELD_CURRENT_SPEC_ID);
+                uint32 spec = caster->ToPlayer()->GetSpecializationId();
 
                 if (spec == TALENT_SPEC_HUNTER_BEASTMASTER || spec == TALENT_SPEC_HUNTER_MARKSMAN)
                 {
@@ -1075,10 +1077,12 @@ public:
             Unit* target = GetExplTargetUnit();
 
             // (1.5 * (rap * 3) * bmMastery * lowNerf * (1 + versability))
-            int32 dmg = 4.5f * owner->GetUInt32Value(UNIT_FIELD_RANGED_ATTACK_POWER);
+            int32 dmg = 4.5f * owner->m_unitData->RangedAttackPower;
             int32 lowNerf = std::min(int32(owner->getLevel()), 20) * 0.05f;
 
-            dmg = AddPct(dmg, owner->GetFloatValue(PLAYER_MASTERY));
+            if (Player const* ownerPlayer = owner->ToPlayer())
+                dmg = AddPct(dmg, ownerPlayer->m_activePlayerData->Mastery);
+
             dmg *= lowNerf;
 
             dmg = caster->SpellDamageBonusDone(target, GetSpellInfo(), dmg, SPELL_DIRECT_DAMAGE, GetEffectInfo(EFFECT_0));
@@ -1518,7 +1522,7 @@ public:
         {
             if (Player* player = GetCaster()->ToPlayer())
             {
-                uint32 spec = player->GetUInt32Value(PLAYER_FIELD_CURRENT_SPEC_ID);
+                uint32 spec = player->GetSpecializationId();
 
                 if (player->HasSpell(SPELL_HUNTER_POSTHAST))
                 {
@@ -2039,7 +2043,7 @@ public:
                 return;
 
             // (3.652 * (rap) * lowNerf * (1 + versability))
-            int32 dmg = 3.652f * owner->GetUInt32Value(UNIT_FIELD_RANGED_ATTACK_POWER);
+            int32 dmg = 3.652f * owner->m_unitData->RangedAttackPower;
             int32 lowNerf = std::min(int32(owner->getLevel()), 20) * 0.05f;
             dmg *= lowNerf;
 
@@ -2086,7 +2090,7 @@ public:
                 return;
 
             // (3.652 * (rap) * lowNerf * (1 + versability))
-            int32 dmg = 3.652f * owner->GetUInt32Value(UNIT_FIELD_RANGED_ATTACK_POWER);
+            int32 dmg = 3.652f * owner->m_unitData->RangedAttackPower;
             int32 lowNerf = std::min(int32(owner->getLevel()), 20) * 0.05f;
             dmg *= lowNerf;
             dmg *= 1.5f;
@@ -2234,7 +2238,7 @@ public:
 
         bool CheckProc(ProcEventInfo& eventInfo)
         {
-            if (eventInfo.GetSpellInfo()->Id == SPELL_HUNTER_MULTISHOT || eventInfo.GetSpellInfo()->Id == SPELL_HUNTER_ARCANE_SHOT)
+            if (eventInfo.GetSpellInfo()->Id == SPELL_HUNTER_AIMED_SHOT || eventInfo.GetSpellInfo()->Id == SPELL_HUNTER_ARCANE_SHOT)
                 return true;
 
             return false;
@@ -2447,7 +2451,7 @@ public:
             if (!owner || !target)
                 return;
 
-            int32 dmg = int32(1.5f * (owner->GetUInt32Value(UNIT_FIELD_RANGED_ATTACK_POWER) * 0.250f));
+            int32 dmg = int32(1.5f * (owner->m_unitData->RangedAttackPower * 0.250f));
 
             dmg = caster->SpellDamageBonusDone(target, GetSpellInfo(), dmg, SPELL_DIRECT_DAMAGE, GetEffectInfo(EFFECT_0));
             dmg = target->SpellDamageBonusTaken(caster, GetSpellInfo(), dmg, SPELL_DIRECT_DAMAGE, GetEffectInfo(EFFECT_0));
@@ -2539,7 +2543,7 @@ public:
                         return;
 
                     // (1.5 * 1 * 1 * (Ranged attack power * 0.333) * (1 + $versadmg))
-                    int32 dmg = (owner->GetUInt32Value(UNIT_FIELD_RANGED_ATTACK_POWER) * 0.333f);
+                    int32 dmg = (owner->m_unitData->RangedAttackPower * 0.333f);
 
                     SpellInfo const* CostModifier = sSpellMgr->GetSpellInfo(SPELL_HUNTER_BASIC_ATTACK_COST_MODIFIER);
                     SpellInfo const* SpikedCollar = sSpellMgr->GetSpellInfo(SPELL_HUNTER_SPIKED_COLLAR);
@@ -2604,7 +2608,7 @@ public:
                 return;
 
             // (1 + AP * 0,2)
-            int32 dmg = 1 + owner->GetUInt32Value(UNIT_FIELD_RANGED_ATTACK_POWER) * 0.2f;
+            int32 dmg = 1 + owner->m_unitData->RangedAttackPower * 0.2f;
 
             dmg = caster->SpellDamageBonusDone(target, GetSpellInfo(), dmg, SPELL_DIRECT_DAMAGE, GetEffectInfo(EFFECT_0));
             dmg = target->SpellDamageBonusTaken(caster, GetSpellInfo(), dmg, SPELL_DIRECT_DAMAGE, GetEffectInfo(EFFECT_0));
@@ -2664,10 +2668,10 @@ public:
             if (caster->GetTypeId() != TYPEID_PLAYER)
                 return;
 
-            if (Creature* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
+            if (TempSummon* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
             {
                 tempSumm->setFaction(caster->getFaction());
-                tempSumm->SetGuidValue(UNIT_FIELD_SUMMONEDBY, caster->GetGUID());
+                tempSumm->SetSummonerGUID(caster->GetGUID());
                 PhasingHandler::InheritPhaseShift(tempSumm, caster);
                 caster->CastSpell(tempSumm, SPELL_HUNTER_FLARE_EFFECT, true);
             }
@@ -2717,10 +2721,10 @@ public:
                 Unit* target = ObjectAccessor::GetUnit(*caster, itr);
                 if (!caster->IsFriendlyTo(target))
                 {
-                    if (Creature* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
+                    if (TempSummon* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
                     {
                         tempSumm->setFaction(caster->getFaction());
-                        tempSumm->SetGuidValue(UNIT_FIELD_SUMMONEDBY, caster->GetGUID());
+                        tempSumm->SetSummonerGUID(caster->GetGUID());
                         PhasingHandler::InheritPhaseShift(tempSumm, caster);
                         caster->CastSpell(tempSumm, SPELL_HUNTER_EXPLOSIVE_TRAP_DAMAGE, true);
                         at->Remove();
@@ -2741,10 +2745,10 @@ public:
 
             if (!caster->IsFriendlyTo(unit))
             {
-                if (Creature* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
+                if (TempSummon* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
                 {
                     tempSumm->setFaction(caster->getFaction());
-                    tempSumm->SetGuidValue(UNIT_FIELD_SUMMONEDBY, caster->GetGUID());
+                    tempSumm->SetSummonerGUID(caster->GetGUID());
                     PhasingHandler::InheritPhaseShift(tempSumm, caster);
                     caster->CastSpell(tempSumm, SPELL_HUNTER_EXPLOSIVE_TRAP_DAMAGE, true);
                     at->Remove();
@@ -2864,10 +2868,10 @@ public:
             {
                 Unit* target = ObjectAccessor::GetUnit(*caster, itr);
                 if (!caster->IsFriendlyTo(target))
-                    if (Creature* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
+                    if (TempSummon* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
                     {
                         tempSumm->setFaction(caster->getFaction());
-                        tempSumm->SetGuidValue(UNIT_FIELD_SUMMONEDBY, caster->GetGUID());
+                        tempSumm->SetSummonerGUID(caster->GetGUID());
                         PhasingHandler::InheritPhaseShift(tempSumm, caster);
                         caster->CastSpell(tempSumm, SPELL_HUNTER_ACTIVATE_TAR_TRAP, true);
                         at->Remove();
@@ -2887,10 +2891,10 @@ public:
 
             if (!caster->IsFriendlyTo(unit))
             {
-                if (Creature* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
+                if (TempSummon* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
                 {
                     tempSumm->setFaction(caster->getFaction());
-                    tempSumm->SetGuidValue(UNIT_FIELD_SUMMONEDBY, caster->GetGUID());
+                    tempSumm->SetSummonerGUID(caster->GetGUID());
                     PhasingHandler::InheritPhaseShift(tempSumm, caster);
                     caster->CastSpell(tempSumm, SPELL_HUNTER_ACTIVATE_TAR_TRAP, true);
                     at->Remove();
@@ -3143,6 +3147,57 @@ public:
     }
 };
 
+/// Bursting Shot --  186387
+class spell_bursting_shot : public SpellScript
+{
+    PrepareSpellScript(spell_bursting_shot);
+
+    void HandleAfterHit()
+    {
+        if (Unit* caster = GetCaster())
+            caster->CastSpell(GetHitUnit(), SPELL_HUNTER_AURA_SHOOTING, true);
+    }
+
+    void Register()
+    {
+        AfterHit += SpellHitFn(spell_bursting_shot::HandleAfterHit);
+    }
+};
+
+// Sentinel - 206817
+// AreaTriggerID - 9769
+struct at_hun_sentinel : AreaTriggerAI
+{
+    at_hun_sentinel(AreaTrigger* areatrigger) : AreaTriggerAI(areatrigger) { }
+
+    int32 baseTimeInterval;
+    int32 timeInterval;
+
+    void OnCreate() override
+    {
+        baseTimeInterval = sSpellMgr->GetSpellInfo(SPELL_HUNTER_SENTINEL)->GetEffect(EFFECT_1)->BasePoints * IN_MILLISECONDS;
+        timeInterval = baseTimeInterval;
+    }
+
+    void OnUpdate(uint32 diff) override
+    {
+        timeInterval += diff;
+        if (timeInterval < baseTimeInterval)
+            return;
+
+        if (Unit* caster = at->GetCaster())
+            for (ObjectGuid guid : at->GetInsideUnits())
+                if (Unit* target = ObjectAccessor::GetUnit(*caster, guid))
+                    if (caster->IsValidAttackTarget(target))
+                    {
+                        caster->CastSpell(target, SPELL_HUNTER_HUNTERS_MARK_AURA, true);
+                        caster->CastSpell(caster, SPELL_HUNTER_HUNTERS_MARK_AURA_2, true);
+                    }
+
+        timeInterval -= baseTimeInterval;
+    }
+};
+
 void AddSC_hunter_spell_scripts()
 {
     new spell_hun_harpoon();
@@ -3193,6 +3248,7 @@ void AddSC_hunter_spell_scripts()
     new spell_hun_raptor_strike();
     new spell_hun_carve();
     new spell_hun_true_aim();
+	RegisterSpellScript(spell_bursting_shot);
     RegisterSpellScript(spell_hun_explosive_shot_detonate);
     RegisterSpellScript(spell_hun_exhilaration);
     RegisterAuraScript(aura_hun_volley);
@@ -3214,6 +3270,7 @@ void AddSC_hunter_spell_scripts()
     new at_hun_tar_trap_not_activated();
     new at_hun_binding_shot();
     new at_hun_caltrops();
+    RegisterAreaTriggerAI(at_hun_sentinel);
 
     // Playerscripts
     new PlayerScript_black_arrow();

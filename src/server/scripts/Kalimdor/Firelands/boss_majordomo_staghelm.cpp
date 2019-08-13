@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+* Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
 *
 * This program is free software; you can redistribute it and/or modify it
 * under the terms of the GNU General Public License as published by the
@@ -126,7 +126,7 @@ class boss_majordomo_staghelm : public CreatureScript
 
             void InitializeAI() override
             {
-                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptId(FLScriptName))
+                if (!instance || static_cast<InstanceMap*>(me->GetMap())->GetScriptId() != sObjectMgr->GetScriptIdOrAdd(FLScriptName))
                     me->IsAIEnabled = false;
                 else if (!me->isDead())
                     Reset();
@@ -192,7 +192,7 @@ class boss_majordomo_staghelm : public CreatureScript
                 switch (summon->GetEntry())
                 {
                     case NPC_BURNING_ORB:
-                        summon->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE|UNIT_FLAG_REMOVE_CLIENT_CONTROL);
+                        summon->AddUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE|UNIT_FLAG_REMOVE_CLIENT_CONTROL));
                         summon->CastSpell(summon, SPELL_BURNING_ORB_PERIODIC, false);
                         break;
                     default:
@@ -371,7 +371,8 @@ class spell_staghelm_burning_orbs : public SpellScriptLoader
             void HandleDummy(SpellEffIndex /*effIndex*/)
             {
                 Unit* caster = GetCaster();
-                uint8 const orbsCount = (GetCaster()->GetMap()->GetSpawnMode() & 1) ? 5 : 2;
+                Difficulty difficulty = caster->GetMap()->GetDifficultyID();
+                uint8 const orbsCount = (difficulty == DIFFICULTY_25_N || difficulty == DIFFICULTY_25_HC) ? 5 : 2;
                 for (uint8 i = 0; i < orbsCount; ++i)
                     caster->CastSpell(orbsPos[i].GetPositionX(), orbsPos[i].GetPositionY(), orbsPos[i].GetPositionZ(), SPELL_BURNING_ORBS_SUMMON, true);
             }

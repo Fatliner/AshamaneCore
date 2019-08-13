@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -121,7 +121,11 @@ ConditionMgr::ConditionTypeInfo const ConditionMgr::StaticConditionTypeData[COND
     { "Pet type",             true, false, false },
     { "On Taxi",             false, false, false },
     { "Quest state mask",     true,  true, false },
-    { "Objective Complete",   true,  false, false }
+    { "Objective Complete",   true, false, false },
+    { "Map Difficulty",       true, false, false },
+    { nullptr,               false, false, false },
+    { "Object Entry or Guid", true, true,  true  },
+    { "Object TypeMask",      true, false, false },
 };
 
 // Checks if object meets the condition
@@ -423,11 +427,6 @@ bool Condition::Meets(ConditionSourceInfo& sourceInfo) const
                 condMeets = player->HasTitle(ConditionValue1);
             break;
         }
-        case CONDITION_SPAWNMASK:
-        {
-            condMeets = ((UI64LIT(1) << object->GetMap()->GetSpawnMode()) & ConditionValue1) != 0;
-            break;
-        }
         case CONDITION_UNIT_STATE:
         {
             if (Unit* unit = object->ToUnit())
@@ -499,16 +498,7 @@ bool Condition::Meets(ConditionSourceInfo& sourceInfo) const
         case CONDITION_QUESTSTATE:
         {
             if (Player* player = object->ToPlayer())
-            {
-                if (
-                    ((ConditionValue2 & (1 << QUEST_STATUS_NONE)) && (player->GetQuestStatus(ConditionValue1) == QUEST_STATUS_NONE)) ||
-                    ((ConditionValue2 & (1 << QUEST_STATUS_COMPLETE)) && (player->GetQuestStatus(ConditionValue1) == QUEST_STATUS_COMPLETE)) ||
-                    ((ConditionValue2 & (1 << QUEST_STATUS_INCOMPLETE)) && (player->GetQuestStatus(ConditionValue1) == QUEST_STATUS_INCOMPLETE)) ||
-                    ((ConditionValue2 & (1 << QUEST_STATUS_FAILED)) && (player->GetQuestStatus(ConditionValue1) == QUEST_STATUS_FAILED)) ||
-                    ((ConditionValue2 & (1 << QUEST_STATUS_REWARDED)) && player->GetQuestRewardStatus(ConditionValue1))
-                )
-                    condMeets = true;
-            }
+                condMeets = ConditionValue2 & (1 << player->GetQuestStatus(ConditionValue1));
             break;
         }
         case CONDITION_QUEST_OBJECTIVE_COMPLETE:
@@ -521,6 +511,11 @@ bool Condition::Meets(ConditionSourceInfo& sourceInfo) const
 
                 condMeets = (!player->GetQuestRewardStatus(obj->QuestID) && player->IsQuestObjectiveComplete(*obj));
             }
+            break;
+        }
+        case CONDITION_DIFFICULTY_ID:
+        {
+            condMeets = object->GetMap()->GetDifficultyID() == ConditionValue1;
             break;
         }
         default:
@@ -680,9 +675,6 @@ uint32 Condition::GetSearcherTypeMaskForCondition() const
         case CONDITION_TITLE:
             mask |= GRID_MAP_TYPE_MASK_PLAYER;
             break;
-        case CONDITION_SPAWNMASK:
-            mask |= GRID_MAP_TYPE_MASK_ALL;
-            break;
         case CONDITION_GENDER:
             mask |= GRID_MAP_TYPE_MASK_PLAYER;
             break;
@@ -721,6 +713,9 @@ uint32 Condition::GetSearcherTypeMaskForCondition() const
             break;
         case CONDITION_QUEST_OBJECTIVE_COMPLETE:
             mask |= GRID_MAP_TYPE_MASK_PLAYER;
+            break;
+        case CONDITION_DIFFICULTY_ID:
+            mask |= GRID_MAP_TYPE_MASK_ALL;
             break;
         default:
             ASSERT(false && "Condition::GetSearcherTypeMaskForCondition - missing condition handling!");
@@ -1058,6 +1053,7 @@ void ConditionMgr::LoadConditions(bool isReload)
         LootTemplates_Disenchant.ResetConditions();
         LootTemplates_Prospecting.ResetConditions();
         LootTemplates_Spell.ResetConditions();
+        LootTemplates_Scrapping.ResetConditions();
 
         TC_LOG_INFO("misc", "Re-Loading `gossip_menu` Table for Conditions!");
         sObjectMgr->LoadGossipMenu();
@@ -1099,7 +1095,7 @@ void ConditionMgr::LoadConditions(bool isReload)
         cond->NegativeCondition         = fields[10].GetBool();
         cond->ErrorType                 = fields[11].GetUInt32();
         cond->ErrorTextId               = fields[12].GetUInt32();
-        cond->ScriptId                  = sObjectMgr->GetScriptId(fields[13].GetString());
+        cond->ScriptId                  = sObjectMgr->GetScriptIdOrAdd(fields[13].GetString());
 
         if (iConditionTypeOrReference >= 0)
             cond->ConditionType = ConditionTypes(iConditionTypeOrReference);
@@ -1217,6 +1213,9 @@ void ConditionMgr::LoadConditions(bool isReload)
                     break;
                 case CONDITION_SOURCE_TYPE_REFERENCE_LOOT_TEMPLATE:
                     valid = addToLootTemplate(cond, LootTemplates_Reference.GetLootForConditionFill(cond->SourceGroup));
+                    break;
+                case CONDITION_SOURCE_TYPE_SCRAPPING_LOOT_TEMPLATE:
+                    valid = addToLootTemplate(cond, LootTemplates_Scrapping.GetLootForConditionFill(cond->SourceGroup));
                     break;
                 case CONDITION_SOURCE_TYPE_SKINNING_LOOT_TEMPLATE:
                     valid = addToLootTemplate(cond, LootTemplates_Skinning.GetLootForConditionFill(cond->SourceGroup));
@@ -1667,6 +1666,23 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             }
             break;
         }
+        case CONDITION_SOURCE_TYPE_SCRAPPING_LOOT_TEMPLATE:
+        {
+            if (!LootTemplates_Scrapping.HaveLootFor(cond->SourceGroup))
+            {
+                TC_LOG_ERROR("sql.sql", "%s SourceGroup in `condition` table, does not exist in `scrapping_loot_template`, ignoring.", cond->ToString().c_str());
+                return false;
+            }
+
+            LootTemplate* loot = LootTemplates_Scrapping.GetLootForConditionFill(cond->SourceGroup);
+            ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
+            if (!pItemProto && !loot->isReference(cond->SourceEntry))
+            {
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                return false;
+            }
+            break;
+        }
         case CONDITION_SOURCE_TYPE_SKINNING_LOOT_TEMPLATE:
         {
             if (!LootTemplates_Skinning.HaveLootFor(cond->SourceGroup))
@@ -1735,6 +1751,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
                     case TARGET_SELECT_CATEGORY_NEARBY:
                     case TARGET_SELECT_CATEGORY_CONE:
                     case TARGET_SELECT_CATEGORY_AREA:
+                    case TARGET_SELECT_CATEGORY_TRAJ:
                         continue;
                     default:
                         break;
@@ -1745,6 +1762,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
                     case TARGET_SELECT_CATEGORY_NEARBY:
                     case TARGET_SELECT_CATEGORY_CONE:
                     case TARGET_SELECT_CATEGORY_AREA:
+                    case TARGET_SELECT_CATEGORY_TRAJ:
                         continue;
                     default:
                         break;
@@ -2001,7 +2019,7 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
         }
         case CONDITION_CLASS:
         {
-            if (!(cond->ConditionValue1 & CLASSMASK_ALL_PLAYABLE))
+            if (cond->ConditionValue1 & ~CLASSMASK_ALL_PLAYABLE)
             {
                 TC_LOG_ERROR("sql.sql", "%s has non existing classmask (%u), skipped.", cond->ToString(true).c_str(), cond->ConditionValue1 & ~CLASSMASK_ALL_PLAYABLE);
                 return false;
@@ -2010,9 +2028,9 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
         }
         case CONDITION_RACE:
         {
-            if (!(cond->ConditionValue1 & RACEMASK_ALL_PLAYABLE))
+            if (cond->ConditionValue1 & ~RACEMASK_ALL_PLAYABLE)
             {
-                TC_LOG_ERROR("sql.sql", "%s has non existing racemask (%u), skipped.", cond->ToString(true).c_str(), cond->ConditionValue1 & ~RACEMASK_ALL_PLAYABLE);
+                TC_LOG_ERROR("sql.sql", "%s has non existing racemask (" UI64FMTD "), skipped.", cond->ToString(true).c_str(), cond->ConditionValue1 & ~RACEMASK_ALL_PLAYABLE);
                 return false;
             }
             break;
@@ -2081,6 +2099,10 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
             }
             break;
         }
+        case CONDITION_OBJECT_ENTRY_GUID_LEGACY:
+            cond->ConditionType = CONDITION_OBJECT_ENTRY_GUID;
+            cond->ConditionValue1 = Trinity::Legacy::ConvertLegacyTypeID(Trinity::Legacy::TypeID(cond->ConditionValue1));
+            /* fallthrough */
         case CONDITION_OBJECT_ENTRY_GUID:
         {
             switch (cond->ConditionValue1)
@@ -2144,6 +2166,10 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
             }
             break;
         }
+        case CONDITION_TYPE_MASK_LEGACY:
+            cond->ConditionType = CONDITION_TYPE_MASK;
+            cond->ConditionValue1 = Trinity::Legacy::ConvertLegacyTypeMask(cond->ConditionValue1);
+            /* fallthrough */
         case CONDITION_TYPE_MASK:
         {
             if (!cond->ConditionValue1 || (cond->ConditionValue1 & ~(TYPEMASK_UNIT | TYPEMASK_PLAYER | TYPEMASK_GAMEOBJECT | TYPEMASK_CORPSE)))
@@ -2261,15 +2287,10 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
             }
             break;
         }
-        case CONDITION_SPAWNMASK:
+        case CONDITION_SPAWNMASK_DEPRECATED:
         {
-            /// @todo: ConditionValue need to be extended to uint64
-            if (uint64(cond->ConditionValue1) >= (UI64LIT(1) << MAX_DIFFICULTY))
-            {
-                TC_LOG_ERROR("sql.sql", "%s has non existing SpawnMask in value1 (%u), skipped.", cond->ToString(true).c_str(), cond->ConditionValue1);
-                return false;
-            }
-            break;
+            TC_LOG_ERROR("sql.sql", "%s using deprecated condition type CONDITION_SPAWNMASK.", cond->ToString(true).c_str());
+            return false;
         }
         case CONDITION_UNIT_STATE:
         {
@@ -2345,6 +2366,13 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
         case CONDITION_TERRAIN_SWAP:
         case CONDITION_CHARMED:
         case CONDITION_TAXI:
+            break;
+        case CONDITION_DIFFICULTY_ID:
+            if (!sDifficultyStore.LookupEntry(cond->ConditionValue1))
+            {
+                TC_LOG_ERROR("sql.sql", "%s has non existing difficulty in value1 (%u), skipped.", cond->ToString(true).c_str(), cond->ConditionValue1);
+                return false;
+            }
             break;
         default:
             TC_LOG_ERROR("sql.sql", "%s Invalid ConditionType in `condition` table, ignoring.", cond->ToString().c_str());
@@ -2491,7 +2519,7 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
     if (condition->Gender >= 0 && player->getGender() != condition->Gender)
         return false;
 
-    if (condition->NativeGender >= 0 && player->GetByteValue(PLAYER_BYTES_3, PLAYER_BYTES_3_OFFSET_GENDER) != condition->NativeGender)
+    if (condition->NativeGender >= 0 && player->m_playerData->NativeSex != condition->NativeGender)
         return false;
 
     if (condition->PowerType != -1 && condition->PowerTypeComp)
@@ -2503,7 +2531,7 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
 
     if (condition->ChrSpecializationIndex >= 0 || condition->ChrSpecializationRole >= 0)
     {
-        if (ChrSpecializationEntry const* spec = sChrSpecializationStore.LookupEntry(player->GetUInt32Value(PLAYER_FIELD_CURRENT_SPEC_ID)))
+        if (ChrSpecializationEntry const* spec = sChrSpecializationStore.LookupEntry(player->GetPrimarySpecialization()))
         {
             if (condition->ChrSpecializationIndex >= 0 && spec->OrderIndex != condition->ChrSpecializationIndex)
                 return false;
@@ -2587,10 +2615,10 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
         }
     }
 
-    if (condition->PvpMedal && !((1 << (condition->PvpMedal - 1)) & player->GetUInt32Value(PLAYER_FIELD_PVP_MEDALS)))
+    if (condition->PvpMedal && !((1 << (condition->PvpMedal - 1)) & *player->m_activePlayerData->PvpMedals))
         return false;
 
-    if (condition->LifetimeMaxPVPRank && player->GetByteValue(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTES_OFFSET_LIFETIME_MAX_PVP_RANK) != condition->LifetimeMaxPVPRank)
+    if (condition->LifetimeMaxPVPRank && player->m_activePlayerData->LifetimeMaxRank != condition->LifetimeMaxPVPRank)
         return false;
 
     if (condition->MovementFlags[0] && !(player->GetUnitMovementFlags() & condition->MovementFlags[0]))
@@ -2644,7 +2672,7 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
         results.fill(true);
         for (std::size_t i = 0; i < PrevQuestCount::value; ++i)
             if (uint32 questBit = sDB2Manager.GetQuestUniqueBitFlag(condition->PrevQuestID[i]))
-                results[i] = (player->GetUInt32Value(PLAYER_FIELD_QUEST_COMPLETED + ((questBit - 1) >> 5)) & (1 << ((questBit - 1) & 31))) != 0;
+                results[i] = (player->m_activePlayerData->QuestCompleted[((questBit - 1) >> 6)] & (UI64LIT(1) << ((questBit - 1) & 63))) != 0;
 
         if (!PlayerConditionLogic(condition->PrevQuestLogic, results))
             return false;
@@ -2728,7 +2756,7 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
         for (std::size_t i = 0; i < ExploredCount::value; ++i)
         {
             if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(condition->Explored[i]))
-                if (area->AreaBit != -1 && !(player->GetUInt32Value(PLAYER_EXPLORED_ZONES_1 + area->AreaBit / 32) & (1 << (uint32(area->AreaBit) % 32))))
+                if (area->AreaBit != -1 && !(player->m_activePlayerData->ExploredZones[area->AreaBit / 64] & (UI64LIT(1) << (uint32(area->AreaBit) % 64))))
                     return false;
         }
     }
@@ -2836,16 +2864,16 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
         }
     }
 
-    if (condition->MinAvgItemLevel && int32(std::floor(player->GetFloatValue(PLAYER_FIELD_AVG_ITEM_LEVEL))) < condition->MinAvgItemLevel)
+    if (condition->MinAvgItemLevel && int32(std::floor(player->m_playerData->AvgItemLevel[0])) < condition->MinAvgItemLevel)
         return false;
 
-    if (condition->MaxAvgItemLevel && int32(std::floor(player->GetFloatValue(PLAYER_FIELD_AVG_ITEM_LEVEL))) > condition->MaxAvgItemLevel)
+    if (condition->MaxAvgItemLevel && int32(std::floor(player->m_playerData->AvgItemLevel[0])) > condition->MaxAvgItemLevel)
         return false;
 
-    if (condition->MinAvgEquippedItemLevel && uint32(std::floor(player->GetFloatValue(PLAYER_FIELD_AVG_ITEM_LEVEL + 1))) < condition->MinAvgEquippedItemLevel)
+    if (condition->MinAvgEquippedItemLevel && uint32(std::floor(player->m_playerData->AvgItemLevel[1])) < condition->MinAvgEquippedItemLevel)
         return false;
 
-    if (condition->MaxAvgEquippedItemLevel && uint32(std::floor(player->GetFloatValue(PLAYER_FIELD_AVG_ITEM_LEVEL + 1))) > condition->MaxAvgEquippedItemLevel)
+    if (condition->MaxAvgEquippedItemLevel && uint32(std::floor(player->m_playerData->AvgItemLevel[1])) > condition->MaxAvgEquippedItemLevel)
         return false;
 
     if (condition->ModifierTreeID && !player->ModifierTreeSatisfied(condition->ModifierTreeID))

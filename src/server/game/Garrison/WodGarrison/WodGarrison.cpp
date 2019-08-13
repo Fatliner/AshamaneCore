@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  * Copyright (C) 2008-2017 TrinityCore <http://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -39,7 +39,7 @@ bool WodGarrison::LoadFromDB()
 
     ObjectGuid::LowType lowGuid = _owner->GetGUID().GetCounter();
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_GARRISON_BLUEPRINTS);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_GARRISON_BLUEPRINTS);
     stmt->setUInt64(0, lowGuid);
     stmt->setUInt8(1, _garrisonType);
     PreparedQueryResult blueprints = CharacterDatabase.Query(stmt);
@@ -92,13 +92,13 @@ bool WodGarrison::LoadFromDB()
     return true;
 }
 
-void WodGarrison::SaveToDB(SQLTransaction& trans)
+void WodGarrison::SaveToDB(CharacterDatabaseTransaction& trans)
 {
     Garrison::SaveToDB(trans);
 
     for (uint32 building : _knownBuildings)
     {
-        PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHARACTER_GARRISON_BLUEPRINTS);
+        CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHARACTER_GARRISON_BLUEPRINTS);
         stmt->setUInt64(0, _owner->GetGUID().GetCounter());
         stmt->setUInt8(1, _garrisonType);
         stmt->setUInt32(2, building);
@@ -110,7 +110,7 @@ void WodGarrison::SaveToDB(SQLTransaction& trans)
         Plot const& plot = p.second;
         if (plot.BuildingInfo.PacketInfo)
         {
-            PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHARACTER_GARRISON_BUILDINGS);
+            CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHARACTER_GARRISON_BUILDINGS);
             stmt->setUInt64(0, _owner->GetGUID().GetCounter());
             stmt->setUInt8(1, _garrisonType);
             stmt->setUInt32(2, plot.BuildingInfo.PacketInfo->GarrPlotInstanceID);
@@ -192,13 +192,17 @@ void WodGarrison::TeleportOwnerAndPlayMovie() const
         }
     };
 
-    _owner->AddMovieDelayedTeleport(_siteLevel->UpgradeMovieID, _siteLevel->MapID, WodGarrisonEntrancePositions[GetFaction()][_siteLevel->GarrLevel - 1]);
+    _owner->AddMovieDelayedAction(_siteLevel->UpgradeMovieID, [this, WodGarrisonEntrancePositions]
+    {
+        _owner->TeleportTo(_siteLevel->MapID, WodGarrisonEntrancePositions[GetFaction()][_siteLevel->GarrLevel - 1]);
+    });
+
     _owner->SendMovieStart(_siteLevel->UpgradeMovieID);
 }
 
 void WodGarrison::Delete()
 {
-    SQLTransaction trans = CharacterDatabase.BeginTransaction();
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
     DeleteFromDB(trans);
     CharacterDatabase.CommitTransaction(trans);
 
@@ -619,7 +623,7 @@ GameObject* WodGarrison::Plot::CreateGameObject(Map* map, GarrisonFactionIndex f
                 finalizer->SetRespawnTime(0);
 
                 if (uint16 animKit = finalizeInfo->FactionInfo[faction].AnimKitId)
-                    finalizer->SetAnimKitId(animKit, false);
+                    finalizer->SetAIAnimKitId(animKit);
 
                 map->AddToMap(finalizer);
             }
@@ -628,7 +632,7 @@ GameObject* WodGarrison::Plot::CreateGameObject(Map* map, GarrisonFactionIndex f
 
     if (building->GetGoType() == GAMEOBJECT_TYPE_GARRISON_BUILDING && building->GetGOInfo()->garrisonBuilding.SpawnMap)
     {
-        for (CellObjectGuidsMap::value_type const& cellGuids : sObjectMgr->GetMapObjectGuids(building->GetGOInfo()->garrisonBuilding.SpawnMap, map->GetSpawnMode()))
+        for (CellObjectGuidsMap::value_type const& cellGuids : sObjectMgr->GetMapObjectGuids(building->GetGOInfo()->garrisonBuilding.SpawnMap, map->GetDifficultyID()))
         {
             for (ObjectGuid::LowType spawnId : cellGuids.second.creatures)
                 if (Creature* spawn = BuildingSpawnHelper<Creature, &Creature::SetHomePosition>(building, spawnId, map))

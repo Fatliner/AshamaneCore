@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -45,6 +45,7 @@
 #include "WorldSession.h"
 #include <sstream>
 #include <cstdarg>
+#include "SpellMgr.h"
 
 BossBoundaryData::~BossBoundaryData()
 {
@@ -77,7 +78,7 @@ void InstanceScript::SaveToDB()
     if (data.empty())
         return;
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_INSTANCE_DATA);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_INSTANCE_DATA);
     stmt->setUInt32(0, GetCompletedEncounterMask());
     stmt->setString(1, data);
     stmt->setUInt32(2, _entranceId);
@@ -98,6 +99,11 @@ void InstanceScript::OnCreatureCreate(Creature* creature)
 {
     AddObject(creature, true);
     AddMinion(creature, true);
+
+    Difficulty difficulty = instance->GetDifficultyID();
+    if (difficulty != DIFFICULTY_NONE)
+        if (InstanceDifficultyMultiplier const* multiplier = sObjectMgr->GetInstanceDifficultyMultiplier(instance->GetId(), difficulty))
+            creature->SetBaseHealth(creature->GetMaxHealth() * multiplier->healthMultiplier);
 
     if (IsChallengeModeStarted())
         if (!creature->IsPet())
@@ -395,6 +401,13 @@ bool InstanceScript::SetBossState(uint32 id, EncounterState state)
                     uint32 resInterval = GetCombatResurrectionChargeInterval();
                     InitializeCombatResurrections(1, resInterval);
                     SendEncounterStart(1, 9, resInterval, resInterval);
+
+                    Map::PlayerList const &playerList = instance->GetPlayers();
+                    if (!playerList.isEmpty())
+                        for (Map::PlayerList::const_iterator i = playerList.begin(); i != playerList.end(); ++i)
+                            if (Player* player = i->GetSource())
+                                if (player->IsAlive())
+                                    player->ProcSkillsAndAuras(nullptr, PROC_FLAG_ENCOUNTER_START, PROC_FLAG_NONE, PROC_SPELL_TYPE_MASK_ALL, PROC_SPELL_PHASE_NONE, PROC_HIT_NONE, nullptr, nullptr, nullptr);
                     break;
                 }
                 case FAIL:
@@ -758,6 +771,54 @@ bool InstanceScript::ServerAllowsTwoSideGroups()
     return sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_GROUP);
 }
 
+CreatureGroup* InstanceScript::SummonCreatureGroup(uint32 creatureGroupID, std::list<TempSummon*>* list /*= nullptr*/)
+{
+    bool createTempList = !list;
+    if (createTempList)
+        list = new std::list<TempSummon*>;
+
+    instance->SummonCreatureGroup(creatureGroupID, list);
+
+    for (TempSummon* summon : *list)
+        summonBySummonGroupIDs[creatureGroupID].push_back(summon->GetGUID());
+
+    if (createTempList)
+    {
+        delete list;
+        list = nullptr;
+    }
+
+    return GetCreatureGroup(creatureGroupID);
+}
+
+CreatureGroup* InstanceScript::GetCreatureGroup(uint32 creatureGroupID)
+{
+    for (ObjectGuid guid : summonBySummonGroupIDs[creatureGroupID])
+        if (Creature* summon = instance->GetCreature(guid))
+            return summon->GetFormation();
+
+    return nullptr;
+}
+
+bool InstanceScript::IsCreatureGroupWiped(uint32 creatureGroupID)
+{
+    for (ObjectGuid guid : summonBySummonGroupIDs[creatureGroupID])
+        if (Creature* summon = instance->GetCreature(guid))
+            if (summon->IsAlive())
+                return false;
+
+    return true;
+}
+
+void InstanceScript::DespawnCreatureGroup(uint32 creatureGroupID)
+{
+    for (ObjectGuid guid : summonBySummonGroupIDs[creatureGroupID])
+        if (Creature* summon = instance->GetCreature(guid))
+            summon->DespawnOrUnsummon();
+
+    summonBySummonGroupIDs.erase(creatureGroupID);
+}
+
 void InstanceScript::DoSetAlternatePowerOnPlayers(int32 value)
 {
     Map::PlayerList const &plrList = instance->GetPlayers();
@@ -830,6 +891,27 @@ void InstanceScript::DoStartMovie(uint32 movieId)
         for (Map::PlayerList::const_iterator i = playerList.begin(); i != playerList.end(); ++i)
             if (Player* player = i->GetSource())
                 player->SendMovieStart(movieId);
+}
+
+void InstanceScript::DoPlayConversation(uint32 conversationId)
+{
+    Map::PlayerList const& playerList = instance->GetPlayers();
+    if (!playerList.isEmpty())
+        for (Map::PlayerList::const_iterator i = playerList.begin(); i != playerList.end(); ++i)
+            if (Player* player = i->GetSource())
+                player->PlayConversation(conversationId);
+}
+
+void InstanceScript::DoSendScenarioEvent(uint32 eventId)
+{
+    Map::PlayerList const& playerList = instance->GetPlayers();
+    if (!playerList.isEmpty())
+        for (Map::PlayerList::const_iterator i = playerList.begin(); i != playerList.end(); ++i)
+            if (Player* player = i->GetSource())
+            {
+                player->GetScenario()->SendScenarioEvent(player, eventId);
+                return;
+            }
 }
 
 // Update Achievement Criteria for all players in instance
@@ -997,7 +1079,7 @@ void InstanceScript::UpdateEncounterState(EncounterCreditType type, uint32 credi
                 if (Group* grp = player->GetGroup())
                     if (grp->isLFGGroup())
                     {
-                        sLFGMgr->FinishDungeon(grp->GetGUID(), dungeonId);
+                        sLFGMgr->FinishDungeon(grp->GetGUID(), dungeonId, instance);
                         return;
                     }
         }
@@ -1166,9 +1248,9 @@ void InstanceScript::StartChallengeMode(uint8 level)
     instance->SendToPlayers(WorldPackets::ChallengeMode::Reset(instance->GetId()).Write());
 
     WorldPackets::Misc::StartTimer startTimer;
-    startTimer.Type = 9;
-    startTimer.TimeLeft = 10;  
-    startTimer.TotalTime = 1;
+    startTimer.Type = WorldPackets::Misc::StartTimer::TIMER_TYPE_CHALLENGE;
+    startTimer.TotalTime = 10;
+    startTimer.TimeLeft = 10;
     instance->SendToPlayers(startTimer.Write());
 
     SendChallengeModeStart();
@@ -1235,6 +1317,9 @@ void InstanceScript::CompleteChallengeMode()
     }
 
     SpawnChallengeModeRewardChest();
+
+    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
+        sChallengeModeMgr->Reward(itr->GetSource(), _challengeModeLevel);
 }
 
 uint32 InstanceScript::GetChallengeModeCurrentDuration() const

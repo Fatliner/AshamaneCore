@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -186,9 +186,10 @@ enum ShamanSpells
 
 enum TotemSpells
 {
-
     SPELL_TOTEM_WIND_RUSH_EFFECT                            = 192082,
+    SPELL_TOTEM_VOODOO_AT                                   = 196935,
     SPELL_TOTEM_VOODOO_EFFECT                               = 196942,
+    SPELL_TOTEM_VOODOO_COOLDOWN                             = 202318,
     SPELL_TOTEM_LIGHTNING_SURGE_EFFECT                      = 118905,
     SPELL_TOTEM_RESONANCE_EFFECT                            = 202192,
     SPELL_TOTEM_LIQUID_MAGMA_EFFECT                         = 192226,
@@ -1999,7 +2000,7 @@ class spell_sha_windfury : public AuraScript
         //Proc Chance is increased by 6.24% of Mastery (ceiled)
         float masteryBonus = 0.0f;
         if (Player* player = eventInfo.GetActor()->ToPlayer())
-            masteryBonus += (player->GetFloatValue(PLAYER_MASTERY)*6.24f) / 100.0f;
+            masteryBonus += (player->m_activePlayerData->Mastery*6.24f) / 100.0f;
 
         float rollChance = 5.0f + masteryBonus;
         if (roll_chance_f(rollChance) || eventInfo.GetActor()->HasAura(SPELL_SHAMAN_DOOM_WINDS))
@@ -2112,8 +2113,8 @@ public:
                 if (m_newMael < 0)
                     m_newMael = 0;
                 caster->SetPower(POWER_MAELSTROM, m_newMael);
-                if (Player* player = caster->ToPlayer())
-                    player->SendPowerUpdate(POWER_MAELSTROM, m_newMael);
+                /*if (Player* player = caster->ToPlayer())
+                    player->SendPowerUpdate(POWER_MAELSTROM, m_newMael);*/
             }
         }
 
@@ -2704,17 +2705,7 @@ struct npc_voodoo_totem : public ScriptedAI
 
     void Reset() override
     {
-        me->GetScheduler().Schedule(1s, [this](TaskContext context)
-        {
-            std::list<Unit*> targets;
-            me->GetAttackableUnitListInRange(targets, 8.0f);
-
-            for (Unit* target : targets)
-                if (me->IsValidAttackTarget(target))
-                    me->CastSpell(target, SPELL_TOTEM_VOODOO_EFFECT, true);
-
-            context.Repeat();
-        });
+        me->CastSpell(nullptr, SPELL_TOTEM_VOODOO_AT, true);
     }
 };
 
@@ -3184,10 +3175,10 @@ public:
             if (timeInterval < 1000)
                 return;
 
-            if (Creature* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
+            if (TempSummon* tempSumm = caster->SummonCreature(WORLD_TRIGGER, at->GetPosition(), TEMPSUMMON_TIMED_DESPAWN, 200))
             {
                 tempSumm->setFaction(caster->getFaction());
-                tempSumm->SetGuidValue(UNIT_FIELD_SUMMONEDBY, caster->GetGUID());
+                tempSumm->SetSummonerGUID(caster->GetGUID());
                 PhasingHandler::InheritPhaseShift(tempSumm, caster);
                 tempSumm->CastCustomSpell(SPELL_SHAMAN_EARTHQUAKE_DAMAGE, SPELLVALUE_BASE_POINT0, caster->GetTotalSpellPowerValue(SPELL_SCHOOL_MASK_NORMAL, false) * 0.3, caster, TRIGGERED_FULL_MASK);
             }
@@ -3725,6 +3716,32 @@ struct npc_feral_spirit : public ScriptedAI
     }
 };
 
+// Spell 196935 - Voodoo Totem
+// AT - 11577
+class at_sha_voodoo_totem : public AreaTriggerAI
+{
+public:
+    at_sha_voodoo_totem(AreaTrigger* areaTrigger) : AreaTriggerAI(areaTrigger) { }
+
+    void OnUnitEnter(Unit* unit) override
+    {
+        Unit* caster = at->GetCaster();
+        if (!caster || !unit)
+            return;
+
+        if (caster->IsValidAttackTarget(unit))
+        {
+            caster->CastSpell(unit, SPELL_TOTEM_VOODOO_EFFECT, true);
+            caster->CastSpell(unit, SPELL_TOTEM_VOODOO_COOLDOWN, true);
+        }
+    }
+
+    void OnUnitExit(Unit* unit) override
+    {
+        unit->RemoveAurasDueToSpell(SPELL_TOTEM_VOODOO_EFFECT, at->GetCasterGuid());
+    }
+};
+
 void AddSC_shaman_spell_scripts()
 {
     new at_sha_earthquake_totem();
@@ -3803,6 +3820,7 @@ void AddSC_shaman_spell_scripts()
     RegisterAuraScript(aura_sha_stormlash_buff);
     RegisterAreaTriggerAI(at_sha_crashing_storm);
     RegisterCreatureAI(npc_feral_spirit);
+    RegisterAreaTriggerAI(at_sha_voodoo_totem);
 }
 
 void AddSC_npc_totem_scripts()

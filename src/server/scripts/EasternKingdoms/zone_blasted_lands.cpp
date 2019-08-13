@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -207,7 +207,10 @@ class npc_archmage_khadgar_gossip : public CreatureScript
 
             if (player->GetQuestStatus(QuestStartDraenor) == QUEST_STATUS_INCOMPLETE)
             {
-                player->AddMovieDelayedTeleport(199, 1265, 4066.7370f, -2381.9917f, 94.858f, 2.90f);
+                player->AddMovieDelayedAction(199, [player]
+                {
+                    player->TeleportTo(1265, 4066.7370f, -2381.9917f, 94.858f, 2.90f);
+                });
                 player->SendMovieStart(199);
                 player->KilledMonsterCredit(78419);
                 return true;

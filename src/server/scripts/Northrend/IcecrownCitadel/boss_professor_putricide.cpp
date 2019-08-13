@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -427,7 +427,7 @@ class boss_professor_putricide : public CreatureScript
                 {
                     case ACTION_CHECK_BOSS:
                         if (instance->GetBossState(DATA_ROTFACE) == DONE && instance->GetBossState(DATA_FESTERGUT) == DONE)
-                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NOT_SELECTABLE);
+                            me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_NOT_SELECTABLE));
                         break;
                     case ACTION_FESTERGUT_COMBAT:
                         SetPhase(PHASE_FESTERGUT);
@@ -1009,7 +1009,7 @@ class spell_putricide_slime_puddle_aura : public SpellScriptLoader
             void ReplaceAura()
             {
                 if (Unit* target = GetHitUnit())
-                    GetCaster()->AddAura((GetCaster()->GetMap()->GetSpawnMode() & 1) ? 72456 : 70346, target);
+                    GetCaster()->AddAura(GetCaster()->GetMap()->Is25ManRaid() ? 72456 : 70346, target);
             }
 
             void Register() override
@@ -1319,7 +1319,7 @@ class spell_putricide_mutated_plague : public SpellScriptLoader
 
                 int32 damage = spell->GetEffect(EFFECT_0)->CalcValue(caster);
                 float multiplier = 2.0f;
-                if (GetTarget()->GetMap()->GetSpawnMode() & 1)
+                if (GetTarget()->GetMap()->Is25ManRaid())
                     multiplier = 3.0f;
 
                 damage *= int32(pow(multiplier, GetStackAmount()));
@@ -1419,7 +1419,7 @@ class spell_putricide_mutation_init : public SpellScriptLoader
             void OnRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
             {
                 uint32 spellId = 70311;
-                if (GetTarget()->GetMap()->GetSpawnMode() & 1)
+                if (GetTarget()->GetMap()->Is25ManRaid())
                     spellId = 71503;
 
                 GetTarget()->CastSpell(GetTarget(), spellId, true);

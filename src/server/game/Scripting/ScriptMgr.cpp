@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -17,6 +17,7 @@
  */
 
 #include "ScriptMgr.h"
+#include "Area.h"
 #include "AreaTrigger.h"
 #include "AreaTriggerAI.h"
 #include "Chat.h"
@@ -413,7 +414,8 @@ class CreatureGameObjectAreaTriggerScriptRegistrySwapHooks
         ASSERT(!creature->IsCharmed(),
                "There is a disabled AI which is still loaded.");
 
-        creature->AI()->EnterEvadeMode();
+        if (creature->IsAlive())
+            creature->AI()->EnterEvadeMode();
     }
 
     static void UnloadDestroyScript(Creature* creature)
@@ -929,9 +931,16 @@ public:
 
         std::unique_ptr<ScriptType> script_ptr(script);
 
+        if (!sObjectMgr->FindScriptId(script->GetName()))
+        {
+            // The script uses a script name from database, but isn't assigned to anything.
+            TC_LOG_ERROR("sql.sql", "Script named '%s' does not have a script name assigned in database.",
+            script->GetName().c_str());
+        }
+
         // Get an ID for the script. An ID only exists if it's a script that is assigned in the database
         // through a script name (or similar).
-        if (uint32 const id = sObjectMgr->GetScriptId(script->GetName()))
+        if (uint32 const id = sObjectMgr->GetScriptIdOrAdd(script->GetName()))
         {
             // Try to find an existing script.
             for (auto const& stored_script : _scripts)
@@ -957,17 +966,6 @@ public:
 
             sScriptRegistryCompositum->SetScriptNameInContext(script->GetName(),
                 sScriptMgr->GetCurrentScriptContext());
-        }
-        else
-        {
-            // The script uses a script name from database, but isn't assigned to anything.
-            TC_LOG_ERROR("sql.sql", "Script named '%s' does not have a script name assigned in database.",
-                script->GetName().c_str());
-
-            // Avoid calling "delete script;" because we are currently in the script constructor
-            // In a valid scenario this will not happen because every script has a name assigned in the database
-            sScriptRegistryCompositum->QueueForDelayedDelete(std::move(script_ptr));
-            return;
         }
     }
 
@@ -1117,11 +1115,9 @@ private:
 
 // Utility macros for looping over scripts.
 #define FOR_SCRIPTS(T, C, E) \
-    if (SCR_REG_LST(T).empty()) \
-        return; \
-    \
-    for (SCR_REG_ITR(T) C = SCR_REG_LST(T).begin(); \
-        C != SCR_REG_LST(T).end(); ++C)
+    if (!SCR_REG_LST(T).empty()) \
+        for (SCR_REG_ITR(T) C = SCR_REG_LST(T).begin(); \
+            C != SCR_REG_LST(T).end(); ++C)
 
 #define FOR_SCRIPTS_RET(T, C, E, R) \
     if (SCR_REG_LST(T).empty()) \
@@ -2370,12 +2366,12 @@ void ScriptMgr::OnPlayerBindToInstance(Player* player, Difficulty difficulty, ui
     FOREACH_SCRIPT(PlayerScript)->OnBindToInstance(player, difficulty, mapid, permanent, extendState);
 }
 
-void ScriptMgr::OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 oldZone, uint32 newArea)
+void ScriptMgr::OnPlayerUpdateZone(Player* player, Area* newArea, Area* oldArea)
 {
-    FOREACH_SCRIPT(PlayerScript)->OnUpdateZone(player, newZone, oldZone, newArea);
+    FOREACH_SCRIPT(PlayerScript)->OnUpdateZone(player, newArea, oldArea);
 }
 
-void ScriptMgr::OnPlayerUpdateArea(Player* player, uint32 newArea, uint32 oldArea)
+void ScriptMgr::OnPlayerUpdateArea(Player* player, Area* newArea, Area* oldArea)
 {
     FOREACH_SCRIPT(PlayerScript)->OnUpdateArea(player, newArea, oldArea);
 }
@@ -2438,6 +2434,11 @@ void ScriptMgr::OnSceneCancel(Player* player, uint32 sceneInstanceId)
 void ScriptMgr::OnSceneComplete(Player* player, uint32 sceneInstanceId)
 {
     FOREACH_SCRIPT(PlayerScript)->OnSceneComplete(player, sceneInstanceId);
+}
+
+void ScriptMgr::OnPlayerRepop(Player* player)
+{
+    FOREACH_SCRIPT(PlayerScript)->OnPlayerRepop(player);
 }
 
 void ScriptMgr::OnMovieComplete(Player* player, uint32 movieId)
@@ -2601,10 +2602,10 @@ void ScriptMgr::OnHeal(Unit* healer, Unit* reciever, uint32& gain)
     FOREACH_SCRIPT(PlayerScript)->OnHeal(healer, reciever, gain);
 }
 
-void ScriptMgr::OnDamage(Unit* attacker, Unit* victim, uint32& damage)
+void ScriptMgr::OnDamage(Unit* attacker, Unit* victim, uint32& damage, SpellInfo const* spellProto)
 {
-    FOREACH_SCRIPT(UnitScript)->OnDamage(attacker, victim, damage);
-    FOREACH_SCRIPT(PlayerScript)->OnDamage(attacker, victim, damage);
+    FOREACH_SCRIPT(UnitScript)->OnDamage(attacker, victim, damage, spellProto);
+    FOREACH_SCRIPT(PlayerScript)->OnDamage(attacker, victim, damage, spellProto);
 }
 
 void ScriptMgr::ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage)
@@ -2619,10 +2620,10 @@ void ScriptMgr::ModifyMeleeDamage(Unit* target, Unit* attacker, uint32& damage)
     FOREACH_SCRIPT(PlayerScript)->ModifyMeleeDamage(target, attacker, damage);
 }
 
-void ScriptMgr::ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage)
+void ScriptMgr::ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage, SpellInfo const* spellInfo)
 {
-    FOREACH_SCRIPT(UnitScript)->ModifySpellDamageTaken(target, attacker, damage);
-    FOREACH_SCRIPT(PlayerScript)->ModifySpellDamageTaken(target, attacker, damage);
+    FOREACH_SCRIPT(UnitScript)->ModifySpellDamageTaken(target, attacker, damage, spellInfo);
+    FOREACH_SCRIPT(PlayerScript)->ModifySpellDamageTaken(target, attacker, damage, spellInfo);
 }
 
 // Conversation
@@ -2632,6 +2633,14 @@ void ScriptMgr::OnConversationCreate(Conversation* conversation, Unit* creator)
 
     GET_SCRIPT(ConversationScript, conversation->GetScriptId(), tmpscript);
     tmpscript->OnConversationCreate(conversation, creator);
+}
+
+void ScriptMgr::OnConversationRemove(Conversation* conversation, Unit* creator)
+{
+    ASSERT(conversation);
+
+    GET_SCRIPT(ConversationScript, conversation->GetScriptId(), tmpscript);
+    tmpscript->OnConversationRemove(conversation, creator);
 }
 
 // Scene

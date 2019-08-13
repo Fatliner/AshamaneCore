@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -44,11 +44,11 @@ enum LevelLimit
     // Client expected level limitation, like as used in DBC item max levels for "until max player level"
     // use as default max player level, must be fit max level for used client
     // also see MAX_LEVEL and STRONG_MAX_LEVEL define
-    DEFAULT_MAX_LEVEL = 110,
+    DEFAULT_MAX_LEVEL = 120,
 
     // client supported max level for player/pets/etc. Avoid overflow or client stability affected.
     // also see GT_MAX_LEVEL define
-    MAX_LEVEL = 110,
+    MAX_LEVEL = 120,
 
     // Server side limitation. Base at used code requirements.
     // also see MAX_LEVEL and GT_MAX_LEVEL define
@@ -58,7 +58,7 @@ enum LevelLimit
 enum BattlegroundBracketId                                  // bracketId for level ranges
 {
     BG_BRACKET_ID_FIRST          = 0,
-    BG_BRACKET_ID_LAST           = 11,
+    BG_BRACKET_ID_LAST           = 12,
 
     // must be max value in PvPDificulty slot + 1
     MAX_BATTLEGROUND_BRACKETS
@@ -135,7 +135,7 @@ enum AreaFlags
     AREA_FLAG_OUTSIDE               = 0x04000000,                // used for determinating spell related inside/outside questions in Map::IsOutdoors
     AREA_FLAG_CAN_HEARTH_AND_RESURRECT = 0x08000000,             // Can Hearth And Resurrect From Area
     AREA_FLAG_NO_FLY_ZONE           = 0x20000000,                // Marks zones where you cannot fly
-    AREA_FLAG_UNK9                  = 0x40000000
+    AREA_FLAG_SUB_ZONE              = 0x40000000,                // Usef for all the sub-zones (mostly when parent != 0)
 };
 
 enum AreaFlags2
@@ -171,7 +171,7 @@ enum ArtifactPowerFlag : uint8
 
 #define MAX_ARTIFACT_TIER 1
 
-#define BATTLE_PET_SPECIES_MAX_ID 2164
+#define BATTLE_PET_SPECIES_MAX_ID 2775
 
 enum BattlePetSpeciesFlags
 {
@@ -217,18 +217,21 @@ enum CriteriaCondition
 enum CriteriaAdditionalCondition
 {
     CRITERIA_ADDITIONAL_CONDITION_SOURCE_DRUNK_VALUE            = 1, // NYI
-    CRITERIA_ADDITIONAL_CONDITION_UNK2                          = 2,
+    CRITERIA_ADDITIONAL_CONDITION_SOURCE_PLAYER_CONDITION       = 2,
     CRITERIA_ADDITIONAL_CONDITION_ITEM_LEVEL                    = 3, // NYI
     CRITERIA_ADDITIONAL_CONDITION_TARGET_CREATURE_ENTRY         = 4,
     CRITERIA_ADDITIONAL_CONDITION_TARGET_MUST_BE_PLAYER         = 5,
     CRITERIA_ADDITIONAL_CONDITION_TARGET_MUST_BE_DEAD           = 6,
     CRITERIA_ADDITIONAL_CONDITION_TARGET_MUST_BE_ENEMY          = 7,
     CRITERIA_ADDITIONAL_CONDITION_SOURCE_HAS_AURA               = 8,
+    CRITERIA_ADDITIONAL_CONDITION_SOURCE_HAS_AURA_TYPE          = 9,
     CRITERIA_ADDITIONAL_CONDITION_TARGET_HAS_AURA               = 10,
     CRITERIA_ADDITIONAL_CONDITION_TARGET_HAS_AURA_TYPE          = 11,
+    CRITERIA_ADDITIONAL_CONDITION_SOURCE_AURA_STATE             = 12,
+    CRITERIA_ADDITIONAL_CONDITION_TARGET_AURA_STATE             = 13,
     CRITERIA_ADDITIONAL_CONDITION_ITEM_QUALITY_MIN              = 14,
     CRITERIA_ADDITIONAL_CONDITION_ITEM_QUALITY_EQUALS           = 15,
-    CRITERIA_ADDITIONAL_CONDITION_UNK16                         = 16,
+    CRITERIA_ADDITIONAL_CONDITION_SOURCE_IS_ALIVE               = 16,
     CRITERIA_ADDITIONAL_CONDITION_SOURCE_AREA_OR_ZONE           = 17,
     CRITERIA_ADDITIONAL_CONDITION_TARGET_AREA_OR_ZONE           = 18,
     CRITERIA_ADDITIONAL_CONDITION_MAP_DIFFICULTY_OLD            = 20,
@@ -250,7 +253,7 @@ enum CriteriaAdditionalCondition
     CRITERIA_ADDITIONAL_CONDITION_TARGET_LEVEL                  = 40,
     CRITERIA_ADDITIONAL_CONDITION_TARGET_ZONE                   = 41,
     CRITERIA_ADDITIONAL_CONDITION_TARGET_HEALTH_PERCENT_BELOW   = 46,
-    CRITERIA_ADDITIONAL_CONDITION_UNK55                         = 55,
+    CRITERIA_ADDITIONAL_CONDITION_TARGET_PLAYER_CONDITION       = 55,
     CRITERIA_ADDITIONAL_CONDITION_MIN_ACHIEVEMENT_POINTS        = 56, // NYI
     CRITERIA_ADDITIONAL_CONDITION_REQUIRES_LFG_GROUP            = 58, // NYI
     CRITERIA_ADDITIONAL_CONDITION_UNK60                         = 60,
@@ -273,12 +276,15 @@ enum CriteriaAdditionalCondition
     CRITERIA_ADDITIONAL_CONDITION_BATTLE_PET_ENTRY              = 81, // NYI
     //CRITERIA_ADDITIONAL_CONDITION_BATTLE_PET_ENTRY_ID           = 82, // Some sort of data id?
     CRITERIA_ADDITIONAL_CONDITION_CHALLENGE_MODE_MEDAL          = 83, // NYI
-    //CRITERIA_ADDITIONAL_CONDITION_UNK84                         = 84, // Quest id
+    CRITERIA_ADDITIONAL_CONDITION_QUEST_INCOMPLETE              = 84,
     //CRITERIA_ADDITIONAL_CONDITION_UNK86                         = 86, // Some external event id
     //CRITERIA_ADDITIONAL_CONDITION_UNK87                         = 87, // Achievement id
     CRITERIA_ADDITIONAL_CONDITION_BATTLE_PET_SPECIES            = 91,
     CRITERIA_ADDITIONAL_CONDITION_EXPANSION                     = 92,
     CRITERIA_ADDITIONAL_CONDITION_REPUTATION                    = 95,
+    CRITERIA_ADDITIONAL_CONDITION_REWARDED_QUEST                = 110,
+    CRITERIA_ADDITIONAL_CONDITION_COMPLETED_QUEST               = 111,
+    CRITERIA_ADDITIONAL_CONDITION_COMPLETED_QUEST_OBJECTIVE     = 112, // NYI, QuestObjectiveID
     CRITERIA_ADDITIONAL_CONDITION_GARRISON_FOLLOWER_ENTRY       = 144,
     CRITERIA_ADDITIONAL_CONDITION_GARRISON_FOLLOWER_QUALITY     = 145,
     CRITERIA_ADDITIONAL_CONDITION_GARRISON_FOLLOWER_LEVEL       = 146,
@@ -524,10 +530,13 @@ enum CriteriaTypes : uint8
     CRITERIA_TYPE_TRANSMOG_SET_UNLOCKED                 = 205,
     CRITERIA_TYPE_GAIN_PARAGON_REPUTATION               = 206,
     CRITERIA_TYPE_EARN_HONOR_XP                         = 207,
-    CRITERIA_TYPE_RELIC_TALENT_UNLOCKED                 = 211
+    CRITERIA_TYPE_RELIC_TALENT_UNLOCKED                 = 211,
+    CRITERIA_TYPE_REACH_ACCOUNT_HONOR_LEVEL             = 213,
+    CRITERIA_TREE_HEART_OF_AZEROTH_ARTIFACT_POWER_EARNED= 214,
+    CRITERIA_TREE_HEART_OF_AZEROTH_LEVEL_REACHED        = 215
 };
 
-#define CRITERIA_TYPE_TOTAL 213
+#define CRITERIA_TYPE_TOTAL 217
 
 enum CriteriaTreeFlags : uint16
 {
@@ -542,14 +551,16 @@ enum CriteriaTreeFlags : uint16
 
 enum CriteriaTreeOperator : uint8
 {
-    CRITERIA_TREE_OPERATOR_SINGLE                   = 0,
-    CRITERIA_TREE_OPERATOR_SINGLE_NOT_COMPLETED     = 1,
-    CRITERIA_TREE_OPERATOR_ALL                      = 4,
-    CRITERIA_TREE_OPERAROR_SUM_CHILDREN             = 5,
-    CRITERIA_TREE_OPERATOR_MAX_CHILD                = 6,
-    CRITERIA_TREE_OPERATOR_COUNT_DIRECT_CHILDREN    = 7,
-    CRITERIA_TREE_OPERATOR_ANY                      = 8,
-    CRITERIA_TREE_OPERATOR_SUM_CHILDREN_WEIGHT      = 9
+    CRITERIA_TREE_OPERATOR_SINGLE                           = 0,
+    CRITERIA_TREE_OPERATOR_SINGLE_NOT_COMPLETED             = 1,
+    CRITERIA_TREE_OPERATOR_MODIFIER_SINGLE                  = 2,
+    CRITERIA_TREE_OPERATOR_MODIFIER_SINGLE_NOT_COMPLETED    = 3,
+    CRITERIA_TREE_OPERATOR_ALL                              = 4,
+    CRITERIA_TREE_OPERAROR_SUM_CHILDREN                     = 5,
+    CRITERIA_TREE_OPERATOR_MAX_CHILD                        = 6,
+    CRITERIA_TREE_OPERATOR_COUNT_DIRECT_CHILDREN            = 7,
+    CRITERIA_TREE_OPERATOR_ANY                              = 8,
+    CRITERIA_TREE_OPERATOR_SUM_CHILDREN_WEIGHT              = 9
 };
 
 enum class CharBaseSectionVariation : uint8
@@ -570,7 +581,8 @@ enum CharSectionFlags
 {
     SECTION_FLAG_PLAYER = 0x01,
     SECTION_FLAG_DEATH_KNIGHT = 0x04,
-    SECTION_FLAG_DEMON_HUNTER = 0x20
+    SECTION_FLAG_DEMON_HUNTER = 0x20,
+    SECTION_FLAG_CONDITIONAL = 0x400
 };
 
 enum CharSectionType
@@ -631,6 +643,12 @@ enum Difficulty : uint8
     DIFFICULTY_WORLD_PVP_SCENARIO_2 = 32,
     DIFFICULTY_TIMEWALKING_RAID     = 33,
     DIFFICULTY_PVP                  = 34,
+    DIFFICULTY_NORMAL_ISLAND        = 38,
+    DIFFICULTY_HEROIC_ISLAND        = 39,
+    DIFFICULTY_MYTHIC_ISLAND        = 40,
+    DIFFICULTY_PVP_ISLAND           = 45,
+    DIFFICULTY_NORMAL_WARFRONT      = 147,
+    DIFFICULTY_HEROIC_WARFRONT      = 149,
 
     MAX_DIFFICULTY
 };
@@ -666,6 +684,20 @@ enum SpawnMask
     SPAWNMASK_RAID_ALL          = (SPAWNMASK_RAID_NORMAL_ALL | SPAWNMASK_RAID_HEROIC_ALL)
 };
 
+enum class ExpectedStatType : uint8
+{
+    CreatureHealth          = 0,
+    PlayerHealth            = 1,
+    CreatureAutoAttackDps   = 2,
+    CreatureArmor           = 3,
+    PlayerMana              = 4,
+    PlayerPrimaryStat       = 5,
+    PlayerSecondaryStat     = 6,
+    ArmorConstant           = 7,
+    None                    = 8,
+    CreatureSpellDamage     = 9
+};
+
 enum FactionTemplateFlags
 {
     FACTION_TEMPLATE_ENEMY_SPAR             = 0x00000020,   // guessed, sparring with enemies?
@@ -686,6 +718,55 @@ enum FactionMasks
 #define MAX_ITEM_PROTO_FLAGS 4
 #define MAX_ITEM_PROTO_SOCKETS 3
 #define MAX_ITEM_PROTO_STATS  10
+
+// LockType.dbc (8.0.1)
+enum LockType
+{
+    LOCKTYPE_LOCKPICKING           = 1,
+    LOCKTYPE_HERBALISM             = 2,
+    LOCKTYPE_MINING                = 3,
+    LOCKTYPE_DISARM_TRAP           = 4,
+    LOCKTYPE_OPEN                  = 5,
+    LOCKTYPE_TREASURE              = 6,
+    LOCKTYPE_CALCIFIED_ELVEN_GEMS  = 7,
+    LOCKTYPE_CLOSE                 = 8,
+    LOCKTYPE_ARM_TRAP              = 9,
+    LOCKTYPE_QUICK_OPEN            = 10,
+    LOCKTYPE_QUICK_CLOSE           = 11,
+    LOCKTYPE_OPEN_TINKERING        = 12,
+    LOCKTYPE_OPEN_KNEELING         = 13,
+    LOCKTYPE_OPEN_ATTACKING        = 14,
+    LOCKTYPE_GAHZRIDIAN            = 15,
+    LOCKTYPE_BLASTING              = 16,
+    LOCKTYPE_PVP_OPEN              = 17,
+    LOCKTYPE_PVP_CLOSE             = 18,
+    LOCKTYPE_FISHING               = 19,
+    LOCKTYPE_INSCRIPTION           = 20,
+    LOCKTYPE_OPEN_FROM_VEHICLE     = 21,
+    LOCKTYPE_ARCHAEOLOGY           = 22,
+    LOCKTYPE_PVP_OPEN_FAST         = 23,
+    LOCKTYPE_LUMBER_MILL           = 28,
+    LOCKTYPE_SKINNING              = 29,
+    LOCKTYPE_ANCIENT_MANA          = 30,
+    LOCKTYPE_WARBOARD              = 31,
+    LOCKTYPE_CLASSIC_HERBALISM     = 32,
+    LOCKTYPE_OUTLAND_HERBALISM     = 33,
+    LOCKTYPE_NORTHREND_HERBALISM   = 34,
+    LOCKTYPE_CATACLYSM_HERBALISM   = 35,
+    LOCKTYPE_PANDARIA_HERBALISM    = 36,
+    LOCKTYPE_DRAENOR_HERBALISM     = 37,
+    LOCKTYPE_LEGION_HERBALISM      = 38,
+    LOCKTYPE_KUL_TIRAN_HERBALISM   = 39,
+    LOCKTYPE_CLASSIC_MINING        = 40,
+    LOCKTYPE_OUTLAND_MINING        = 41,
+    LOCKTYPE_NORTHREND_MINING      = 42,
+    LOCKTYPE_CATACLYSM_MINING      = 43,
+    LOCKTYPE_PANDARIA_MINING       = 44,
+    LOCKTYPE_DRAENOR_MINING        = 45,
+    LOCKTYPE_LEGION_MINING         = 46,
+    LOCKTYPE_KUL_TIRAN_MINING      = 47,
+    LOCKTYPE_SKINNING_2            = 48
+};
 
 enum MapTypes                                               // Lua_IsInInstance
 {
@@ -773,6 +854,68 @@ enum ItemBonusType
     ITEM_BONUS_OVERRIDE_REQUIRED_LEVEL          = 18
 };
 
+enum class ItemContext : uint8
+{
+    NONE                    = 0,
+    Dungeon_Normal          = 1,
+    Dungeon_Heroic          = 2,
+    Raid_Normal             = 3,
+    Raid_Raid_Finder        = 4,
+    Raid_Heroic             = 5,
+    Raid_Mythic             = 6,
+    PVP_Unranked_1          = 7,
+    PVP_Ranked_1            = 8,
+    Scenario_Normal         = 9,
+    Scenario_Heroic         = 10,
+    Quest_Reward            = 11,
+    Store                   = 12,
+    Trade_Skill             = 13,
+    Vendor                  = 14,
+    Black_Market            = 15,
+    Challenge_Mode_1        = 16,
+    Dungeon_Lvl_Up_1        = 17,
+    Dungeon_Lvl_Up_2        = 18,
+    Dungeon_Lvl_Up_3        = 19,
+    Dungeon_Lvl_Up_4        = 20,
+    Force_to_NONE           = 21,
+    TimeWalker              = 22,
+    Dungeon_Mythic          = 23,
+    Pvp_Honor_Reward        = 24,
+    World_Quest_1           = 25,
+    World_Quest_2           = 26,
+    World_Quest_3           = 27,
+    World_Quest_4           = 28,
+    World_Quest_5           = 29,
+    World_Quest_6           = 30,
+    Mission_Reward_1        = 31,
+    Mission_Reward_2        = 32,
+    Challenge_Mode_2        = 33,
+    Challenge_Mode_3        = 34,
+    Challenge_Mode_Jackpot  = 35,
+    World_Quest_7           = 36,
+    World_Quest_8           = 37,
+    PVP_Ranked_2            = 38,
+    PVP_Ranked_3            = 39,
+    PVP_Ranked_4            = 40,
+    PVP_Unranked_2          = 41,
+    World_Quest_9           = 42,
+    World_Quest_10          = 43,
+    PVP_Ranked_5            = 44,
+    PVP_Ranked_6            = 45,
+    PVP_Ranked_7            = 46,
+    PVP_Unranked_3          = 47,
+    PVP_Unranked_4          = 48,
+    PVP_Unranked_5          = 49,
+    PVP_Unranked_6          = 50,
+    PVP_Unranked_7          = 51,
+    PVP_Ranked_8            = 52,
+    World_Quest_11          = 53,
+    World_Quest_12          = 54,
+    World_Quest_13          = 55,
+    PVP_Ranked_Jackpot      = 56,
+    Tournament_Realm        = 57,
+};
+
 enum ItemLimitCategoryMode
 {
     ITEM_LIMIT_CATEGORY_MODE_HAVE       = 0,                      // limit applied to amount items in inventory/bank
@@ -830,24 +973,18 @@ enum ItemSpecStat
     ITEM_SPEC_STAT_NONE             = 40
 };
 
-enum ItemContext : uint8
+enum JournalEncounterFlags : uint8
 {
-    None            = 0,
+    JOURNAL_ENCOUNTER_FLAG_UNK2     = 0x02,
+    JOURNAL_ENCOUNTER_FLAG_ALLIANCE = 0x04, // This encounter can be see by alliance only
+    JOURNAL_ENCOUNTER_FLAG_HORDE    = 0x08,
+    JOURNAL_ENCOUNTER_FLAG_LEGION_WB= 0x16,
+};
 
-    DungeonNormal   = 1,
-    DungeonHeroic   = 2,
-    DungeonMythic   = 23,
-
-    RaidLfr         = 4,
-    RaidNormal      = 3,
-    RaidHeroic      = 5,
-    RaidMythic      = 6,
-
-    ScenarioNormal  = 9,
-    ScenarioHeroic  = 10,
-
-    Event           = 9,
-    TimeWalker      = 22,
+enum LfgDungeons : uint32
+{
+    LFG_DUNGEON_TIME_WALKING_BLACK_TEMPLE   = 1533,
+    LFG_DUNGEON_TIME_WALKING_ULDUAR         = 1677
 };
 
 enum MapDifficultyFlags : uint8
@@ -965,7 +1102,7 @@ enum SpellShapeshiftFormFlags
     SHAPESHIFT_FORM_PREVENT_EMOTE_SOUNDS        = 0x1000
 };
 
-#define TaxiMaskSize 258
+#define TaxiMaskSize 311
 typedef std::array<uint8, TaxiMaskSize> TaxiMask;
 
 enum TotemCategoryType
@@ -1037,8 +1174,7 @@ enum SummonPropFlags
 
 #define MAX_TALENT_TIERS 7
 #define MAX_TALENT_COLUMNS 3
-#define MAX_PVP_TALENT_TIERS 6
-#define MAX_PVP_TALENT_COLUMNS 3
+#define MAX_PVP_TALENT_SLOTS 4
 
 enum TaxiNodeFlags
 {
@@ -1054,11 +1190,30 @@ enum TaxiPathNodeFlags
     TAXI_PATH_NODE_FLAG_STOP        = 0x2
 };
 
+enum UiMapSystem : int8
+{
+    UI_MAP_SYSTEM_WORLD     = 0,
+    UI_MAP_SYSTEM_TAXI      = 1,
+    UI_MAP_SYSTEM_ADVENTURE = 2,
+    MAX_UI_MAP_SYSTEM       = 3
+};
+
+enum UiMapType : int8
+{
+    UI_MAP_TYPE_COSMIC      = 0,
+    UI_MAP_TYPE_WORLD       = 1,
+    UI_MAP_TYPE_CONTINENT   = 2,
+    UI_MAP_TYPE_ZONE        = 3,
+    UI_MAP_TYPE_DUNGEON     = 4,
+    UI_MAP_TYPE_MICRO       = 5,
+    UI_MAP_TYPE_ORPHAN      = 6,
+};
+
 enum VehicleSeatFlags
 {
     VEHICLE_SEAT_FLAG_HAS_LOWER_ANIM_FOR_ENTER                         = 0x00000001,
     VEHICLE_SEAT_FLAG_HAS_LOWER_ANIM_FOR_RIDE                          = 0x00000002,
-    VEHICLE_SEAT_FLAG_UNK3                                             = 0x00000004,
+    VEHICLE_SEAT_FLAG_DISABLE_GRAVITY                                  = 0x00000004, // Passenger will not be affected by gravity
     VEHICLE_SEAT_FLAG_SHOULD_USE_VEH_SEAT_EXIT_ANIM_ON_VOLUNTARY_EXIT  = 0x00000008,
     VEHICLE_SEAT_FLAG_UNK5                                             = 0x00000010,
     VEHICLE_SEAT_FLAG_UNK6                                             = 0x00000020,
@@ -1107,18 +1262,59 @@ enum VehicleSeatFlagsB
 // CurrencyTypes.dbc
 enum CurrencyTypes
 {
-    CURRENCY_TYPE_ARCHAEOLOGY_DWARF     = 384,
-    CURRENCY_TYPE_ARCHAEOLOGY_TROLL     = 385,
-    CURRENCY_TYPE_ARCHAEOLOGY_FOSSIL    = 393,
-    CURRENCY_TYPE_ARCHAEOLOGY_NIGHT_ELF = 394,
-    CURRENCY_TYPE_JUSTICE_POINTS        = 395,
-    CURRENCY_TYPE_VALOR_POINTS          = 396,
-    CURRENCY_TYPE_ARCHAEOLOGY_ORC       = 397,
-    CURRENCY_TYPE_ARCHAEOLOGY_DRAENEI   = 398,
-    CURRENCY_TYPE_ARCHAEOLOGY_VRYKUL    = 399,
-    CURRENCY_TYPE_ARCHAEOLOGY_NERUBIAN  = 400,
-    CURRENCY_TYPE_ARCHAEOLOGY_TOLVIR    = 401,
-    CURRENCY_TYPE_APEXIS_CRYSTALS       = 823,
+    CURRENCY_TYPE_DALARAN_JEWEL                     = 61,
+    CURRENCY_TYPE_EPICUREAN                         = 81,
+    CURRENCY_TYPE_CHAMPION_SEAL                     = 241,
+    CURRENCY_TYPE_ILLUSTROUS_JEWEL                  = 361,
+    CURRENCY_TYPE_ARCHAEOLOGY_DWARF                 = 384,
+    CURRENCY_TYPE_ARCHAEOLOGY_TROLL                 = 385,
+    CURRENCY_TYPE_CONQUEST_POINTS                   = 390,
+    CURRENCY_TYPE_TOL_BARAD                         = 391,
+    CURRENCY_TYPE_HONOR_POINTS                      = 392,
+    CURRENCY_TYPE_ARCHAEOLOGY_FOSSIL                = 393,
+    CURRENCY_TYPE_ARCHAEOLOGY_NIGHT_ELF             = 394,
+    CURRENCY_TYPE_JUSTICE_POINTS                    = 395,
+    CURRENCY_TYPE_VALOR_POINTS                      = 396,
+    CURRENCY_TYPE_ARCHAEOLOGY_ORC                   = 397,
+    CURRENCY_TYPE_ARCHAEOLOGY_DRAENEI               = 398,
+    CURRENCY_TYPE_ARCHAEOLOGY_VRYKUL                = 399,
+    CURRENCY_TYPE_ARCHAEOLOGY_NERUBIAN              = 400,
+    CURRENCY_TYPE_ARCHAEOLOGY_TOLVIR                = 401,
+    CURRENCY_TYPE_IRONPAW                           = 402,
+    CURRENCY_TYPE_WORLD_TREE                        = 416,
+    CURRENCY_TYPE_CONQUEST_META_ARENA_BG            = 483,
+    CURRENCY_TYPE_CONQUEST_META_RBG                 = 484,
+    CURRENCY_TYPE_DARKMOON_TICKET                   = 515,
+    CURRENCY_TYPE_MOTE_OF_DARKNESS                  = 614,
+    CURRENCY_TYPE_CORRUPTED_ESSENCE                 = 615,
+    CURRENCY_TYPE_ARCHAEOLOGY_PANDAREN              = 676,
+    CURRENCY_TYPE_ARCHAEOLOGY_MOGU                  = 677,
+    CURRENCY_TYPE_ELDER_CHARM_GOOD_FORTUNE          = 697,
+    CURRENCY_TYPE_ZEN_JEWEL                         = 698,
+    CURRENCY_TYPE_LESSER_CHARM_GOOD_FORTUNE         = 738,
+    CURRENCY_TYPE_MOGU_RUNE_FATE                    = 752,
+    CURRENCY_TYPE_ARCHAEOLOGY_MANTID                = 754,
+    CURRENCY_TYPE_WARFORGED_SEAL                    = 776,
+    CURRENCY_TYPE_TIMELESS_COIN                     = 777,
+    CURRENCY_TYPE_BLOODY_COIN                       = 789,
+    CURRENCY_TYPE_BLACK_IRON_FRAGEMENT              = 810,
+    CURRENCY_TYPE_DRAENOR_CLANS_ARCHAEOLOGY         = 821,
+    CURRENCY_TYPE_APEXIS_CRYSTALS                   = 823,
+    CURRENCY_TYPE_GARRISON_RESSOURCES               = 824,
+    CURRENCY_TYPE_OGRE_ARCHAEOLOGY_FRAGEMENT        = 828,
+    CURRENCY_TYPE_ARAKKOA_ARCHAEOLOGY               = 829,
+    CURRENCY_TYPE_UNUSED                            = 830,
+    CURRENCY_TYPE_UNUSED_2                          = 897,
+    CURRENCY_TYPE_SECRET_OF_DRAENOR_ALCHEMY         = 910,
+    CURRENCY_TYPE_ARTIFACT_FRAGEMENT                = 944,
+    CURRENCY_TYPE_DINGY_IRON_COINS                  = 980,
+    CURRENCY_TYPE_SEAL_OF_TEMPERED_FATE             = 994,
+    CURRENCY_TYPE_SECRET_OF_DRAENOR_TAILORING       = 999,
+    CURRENCY_TYPE_SECRET_OF_DRAENOR_JEWELCRAFTING   = 1008,
+    CURRENCY_TYPE_SECRET_OF_DRAENOR_LEATHERWORKING  = 1017,
+    CURRENCY_TYPE_SECRET_OF_DRAENOR_BLACKSMITHING   = 1020,
+    CURRENCY_TYPE_OIL                               = 1101,
+    CURRENCY_TYPE_AZERITE                           = 1553,
 };
 
 enum WorldMapTransformsFlags

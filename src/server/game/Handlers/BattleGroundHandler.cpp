@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -40,7 +40,7 @@
 
 void WorldSession::HandleBattlemasterHelloOpcode(WorldPackets::NPC::Hello& hello)
 {
-    Creature* unit = GetPlayer()->GetNPCIfCanInteractWith(hello.Unit, UNIT_NPC_FLAG_BATTLEMASTER);
+    Creature* unit = GetPlayer()->GetNPCIfCanInteractWith(hello.Unit, UNIT_NPC_FLAG_BATTLEMASTER, UNIT_NPC_FLAG_2_NONE);
     if (!unit)
         return;
 
@@ -62,8 +62,13 @@ void WorldSession::HandleBattlemasterHelloOpcode(WorldPackets::NPC::Hello& hello
 void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::BattlemasterJoin& battlemasterJoin)
 {
     bool isPremade = false;
-    Group* grp = NULL;
-    uint32 bgTypeId_ = battlemasterJoin.QueueID & 0xFFFF;
+    if (battlemasterJoin.QueueIDs.empty())
+    {
+        TC_LOG_ERROR("network", "Battleground: no bgtype received. possible cheater? %s", _player->GetGUID().ToString().c_str());
+        return;
+    }
+
+    uint32 bgTypeId_ = battlemasterJoin.QueueIDs[0] & 0xFFFF;
     if (!sBattlemasterListStore.LookupEntry(bgTypeId_))
     {
         TC_LOG_ERROR("network", "Battleground: invalid bgtype (%u) received. possible cheater? %s", bgTypeId_, _player->GetGUID().ToString().c_str());
@@ -98,8 +103,10 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
 
     GroupJoinBattlegroundResult err = ERR_BATTLEGROUND_NONE;
 
+    Group* grp = _player->GetGroup();
+
     // check queue conditions
-    if (!battlemasterJoin.JoinAsGroup)
+    if (!grp)
     {
         if (GetPlayer()->isUsingLfg())
         {
@@ -169,11 +176,6 @@ void WorldSession::HandleBattlemasterJoinOpcode(WorldPackets::Battleground::Batt
     }
     else
     {
-        grp = _player->GetGroup();
-
-        if (!grp)
-            return;
-
         if (grp->GetLeaderGUID() != _player->GetGUID())
             return;
 
@@ -724,37 +726,16 @@ void WorldSession::HandleReportPvPAFK(WorldPackets::Battleground::ReportPvPPlaye
 
 void WorldSession::HandleRequestRatedBattlefieldInfo(WorldPackets::Battleground::RequestRatedBattlefieldInfo& /*packet*/)
 {
-    /// @Todo: perfome research in this case
-    /// The unk fields are related to arenas
-    WorldPacket data(SMSG_RATED_BATTLEFIELD_INFO, 72);
-    data << uint32(0);      // BgWeeklyWins20vs20
-    data << uint32(0);      // BgWeeklyPlayed20vs20
-    data << uint32(0);      // BgWeeklyPlayed15vs15
-    data << uint32(0);
-    data << uint32(0);      // BgWeeklyWins10vs10
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);      // BgWeeklyWins15vs15
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);
-    data << uint32(0);      // BgWeeklyPlayed10vs10
-    data << uint32(0);
-    data << uint32(0);
-
-    SendPacket(&data);
+    WorldPackets::Battleground::RatedBattleFieldInfo ratedBattleFieldInfo;
+    ratedBattleFieldInfo.Infos = _player->GetRatedInfos();
+    SendPacket(ratedBattleFieldInfo.Write());
 }
 
 void WorldSession::HandleGetPVPOptionsEnabled(WorldPackets::Battleground::GetPVPOptionsEnabled& /*getPvPOptionsEnabled*/)
 {
-    // This packet is completely irrelevant, it triggers PVP_TYPES_ENABLED lua event but that is not handled in interface code as of 6.1.2
     WorldPackets::Battleground::PVPOptionsEnabled pvpOptionsEnabled;
     pvpOptionsEnabled.WargameArenas = false;
-    pvpOptionsEnabled.RatedArenas = false;
+    pvpOptionsEnabled.RatedArenas = true;
     pvpOptionsEnabled.WargameBattlegrounds = false;
     pvpOptionsEnabled.ArenaSkirmish = true;
     pvpOptionsEnabled.PugBattlegrounds = true;

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -134,7 +134,22 @@ struct boss_serpentrix : public BossAI
                     }
 
                     if (!hasPlayerInRange)
+                    {
                         DoCastSelf(SPELL_RAMPAGE, true);
+
+                        me->GetScheduler().Schedule(2s, [this](TaskContext context)
+                        {
+                            if (me->GetChannelSpellId() == SPELL_RAMPAGE)
+                            {
+                                Map::PlayerList const& playerList = me->GetMap()->GetPlayers();
+                                for (Map::PlayerList::const_iterator itr = playerList.begin(); itr != playerList.end(); ++itr)
+                                    if (me->IsWithinMeleeRange(itr->GetSource()))
+                                        me->InterruptSpell(CURRENT_CHANNELED_SPELL);
+
+                                context.Repeat();
+                            }
+                        });
+                    }
                 }
 
                 events.Repeat(2s);

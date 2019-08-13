@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  * Copyright (C) 2016 Firestorm Servers <https://firestorm-servers.com>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -163,7 +163,7 @@ class boss_twin_ogron_pol : public CreatureScript
 
                 me->SetPower(Powers::POWER_ENERGY, 0);
                 me->SetMaxPower(Powers::POWER_ENERGY, 100);
-                me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_REGENERATE_POWER);
+                me->AddUnitFlag2(UNIT_FLAG2_REGENERATE_POWER);
 
                 /// Has two equips, but one handed and shielded
                 me->SetCanDualWield(false);
@@ -198,7 +198,7 @@ class boss_twin_ogron_pol : public CreatureScript
                         me->SetPower(Powers::POWER_ENERGY, 0);
 
                         me->AddUnitState(UnitState::UNIT_STATE_ROOT);
-                        me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_REMOVE_CLIENT_CONTROL);
+                        me->AddUnitFlag(UNIT_FLAG_REMOVE_CLIENT_CONTROL);
 
                         me->CastSpell(me, eSpells::PulverizeAura, true);
 
@@ -241,7 +241,7 @@ class boss_twin_ogron_pol : public CreatureScript
                             me->SendCancelSpellVisual(eVisuals::BigPulverize);
 
                             me->ClearUnitState(UnitState::UNIT_STATE_ROOT);
-                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_REMOVE_CLIENT_CONTROL);
+                            me->RemoveUnitFlag(UNIT_FLAG_REMOVE_CLIENT_CONTROL);
                         });
 
                         break;
@@ -592,7 +592,7 @@ class boss_twin_ogron_phemos : public CreatureScript
 
                 me->SetMaxPower(Powers::POWER_ENERGY, 100);
                 me->SetPower(Powers::POWER_ENERGY, 98);
-                me->SetFlag(UNIT_FIELD_FLAGS_2, UNIT_FLAG2_REGENERATE_POWER);
+                me->AddUnitFlag2(UNIT_FLAG2_REGENERATE_POWER);
 
                 me->CastSpell(me, eSpells::DespawnAreaTriggers, true);
                 me->CastSpell(me, eSpells::AggressiveDisposition, true);
@@ -669,7 +669,7 @@ class boss_twin_ogron_phemos : public CreatureScript
                         m_EnfeeblingRoarScheduled = false;
                         m_WhirlwindScheduled = false;
 
-                        float l_O = frand(0.f, 2.f * float(M_PI));
+                        float l_O = frand(0.0f, 2.0f * float(M_PI));
                         Position pos =
                         {
                             (g_CenterPos.m_positionX + (g_CircleToCenterDist * cos(l_O))),

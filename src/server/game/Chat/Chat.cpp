@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -19,6 +19,7 @@
 #include "Chat.h"
 #include "AccountMgr.h"
 #include "CellImpl.h"
+#include "CharacterCache.h"
 #include "ChatLink.h"
 #include "ChatPackets.h"
 #include "Common.h"
@@ -56,7 +57,7 @@ std::vector<ChatCommand> const& ChatHandler::getCommandTable()
         // calls getCommandTable() recursively.
         commandTableCache = sScriptMgr->GetChatCommands();
 
-        PreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_COMMANDS);
+        WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_SEL_COMMANDS);
         PreparedQueryResult result = WorldDatabase.Query(stmt);
         if (result)
         {
@@ -107,7 +108,7 @@ bool ChatHandler::HasLowerSecurity(Player* target, ObjectGuid guid, bool strong)
     if (target)
         target_session = target->GetSession();
     else if (!guid.IsEmpty())
-        target_account = ObjectMgr::GetPlayerAccountIdByGUID(guid);
+        target_account = sCharacterCache->GetCharacterAccountIdByGuid(guid);
 
     if (!target_session && !target_account)
     {
@@ -346,7 +347,7 @@ bool ChatHandler::ExecuteCommandInTable(std::vector<ChatCommand> const& table, c
                     guid.ToString().c_str());
 
                 uint8 index = 0;
-                PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_LOG_GM_COMMAND);
+                CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_LOG_GM_COMMAND);
                 stmt->setUInt32(index++, player->GetSession()->GetAccountId());
                 stmt->setString(index++, player->GetSession()->GetBattlenetAccountName());
                 stmt->setUInt32(index++, player->GetGUID().GetCounter());
@@ -479,7 +480,7 @@ bool ChatHandler::isValidChatMessage(char const* message)
 /*
 Valid examples:
 |cffa335ee|Hitem:812:0:0:0:0:0:0:0:70|h[Glowing Brightwood Staff]|h|r
-|cff808080|Hquest:2278:47|h[The Platinum Discs]|h|r
+|cffffff00|Hquest:51101:-1:110:120:5|h[The Wounded King]|h|r
 |cffffd000|Htrade:4037:1:150:1:6AAAAAAAAAAAAAAAAAAAAAAOAADAAAAAAAAAAAAAAAAIAAAAAAAAA|h[Engineering]|h|r
 |cff4e96f7|Htalent:2232:-1|h[Taste for Blood]|h|r
 |cff71d5ff|Hspell:21563|h[Command]|h|r
@@ -961,7 +962,7 @@ ObjectGuid::LowType ChatHandler::extractLowGuidFromLink(char* text, HighGuid& gu
             if (Player* player = ObjectAccessor::FindPlayerByName(name))
                 return player->GetGUID().GetCounter();
 
-            ObjectGuid guid = ObjectMgr::GetPlayerGUIDByName(name);
+            ObjectGuid guid = sCharacterCache->GetCharacterGuidByName(name);
             if (guid.IsEmpty())
                 return 0;
 
@@ -999,15 +1000,18 @@ std::string ChatHandler::extractPlayerNameFromLink(char* text)
     return name;
 }
 
-bool ChatHandler::extractPlayerTarget(char* args, Player** player, ObjectGuid* player_guid /*= nullptr*/, std::string* player_name /*= nullptr*/)
+bool ChatHandler::extractPlayerTarget(char* args, Player** player, ObjectGuid* player_guid /*= nullptr*/, std::string* player_name /*= nullptr*/, bool sendError /*= true*/)
 {
     if (args && *args)
     {
         std::string name = extractPlayerNameFromLink(args);
         if (name.empty())
         {
-            SendSysMessage(LANG_PLAYER_NOT_FOUND);
-            SetSentErrorMessage(true);
+            if (sendError)
+            {
+                SendSysMessage(LANG_PLAYER_NOT_FOUND);
+                SetSentErrorMessage(true);
+            }
             return false;
         }
 
@@ -1018,7 +1022,7 @@ bool ChatHandler::extractPlayerTarget(char* args, Player** player, ObjectGuid* p
             *player = pl;
 
         // if need guid value from DB (in name case for check player existence)
-        ObjectGuid guid = !pl && (player_guid || player_name) ? ObjectMgr::GetPlayerGUIDByName(name) : ObjectGuid::Empty;
+        ObjectGuid guid = !pl && (player_guid || player_name) ? sCharacterCache->GetCharacterGuidByName(name) : ObjectGuid::Empty;
 
         // if allowed player guid (if no then only online players allowed)
         if (player_guid)
@@ -1044,8 +1048,11 @@ bool ChatHandler::extractPlayerTarget(char* args, Player** player, ObjectGuid* p
     // some from req. data must be provided (note: name is empty if player does not exist)
     if ((!player || !*player) && (!player_guid || !*player_guid) && (!player_name || player_name->empty()))
     {
-        SendSysMessage(LANG_PLAYER_NOT_FOUND);
-        SetSentErrorMessage(true);
+        if (sendError)
+        {
+            SendSysMessage(LANG_PLAYER_NOT_FOUND);
+            SetSentErrorMessage(true);
+        }
         return false;
     }
 
@@ -1170,14 +1177,14 @@ bool ChatHandler::GetPlayerGroupAndGUIDByName(const char* cname, Player*& player
         {
             if (!normalizePlayerName(name))
             {
-                PSendSysMessage(LANG_PLAYER_NOT_FOUND);
+                SendSysMessage(LANG_PLAYER_NOT_FOUND);
                 SetSentErrorMessage(true);
                 return false;
             }
 
             player = ObjectAccessor::FindPlayerByName(name);
             if (offline)
-                guid = ObjectMgr::GetPlayerGUIDByName(name.c_str());
+                guid = sCharacterCache->GetCharacterGuidByName(name);
         }
     }
 
@@ -1229,86 +1236,22 @@ void CommandArgs::Initialize(std::initializer_list<CommandArgsType> argsType)
         }
 
         std::vector<std::string> argsVector;
-
-        std::ostringstream arg;
-        uint32 argsLength = strlen(_charArgs);
-
-        for (size_t i = 0; i < argsLength; i++)
-        {
-            char c = _charArgs[i];
-            if (c == ' ')
-            {
-                argsVector.push_back(arg.str());
-                arg.str("");
-                arg.clear();
-            }
-            else if (c == '\"')
-            {
-                ++i;
-                while (i < argsLength && _charArgs[i] != '\"')
-                    arg << _charArgs[i++];
-            }
-            else if (c == '|')
-            {
-                while (i < argsLength && (i <= 1 || _charArgs[i - 1] != '|' || _charArgs[i] != 'r'))
-                    arg << _charArgs[i++];
-
-                arg << 'r';
-            }
-            else
-                arg << _charArgs[i];
-        }
-
-        if (arg.str().size() != 0)
-            argsVector.push_back(arg.str());
-
-        uint8 argsVectorSize = argsVector.size();
-        uint8 argsTypeVectorSize = argsTypeVector.size();
-
-        // Check if any parameter is optionnal
-        if (argsVectorSize != argsTypeVectorSize)
-        {
-            if (argsVectorSize > argsTypeVectorSize)
-                throw std::invalid_argument("");
-
-            uint8 optionalCount = uint8(std::count_if(argsTypeVector.begin(), argsTypeVector.end(), [](CommandArgsType const& type)
-            {
-                return type > ARG_OPTIONAL_BEGIN;
-            }));
-
-            int8 argsDiff = argsTypeVectorSize - argsVectorSize;
-
-            if (optionalCount < argsDiff)
-                throw std::invalid_argument("");
-
-            for (uint8 i = argsTypeVectorSize; i != 0; --i)
-            {
-                auto itr = argsTypeVector.begin();
-                std::advance(itr, i - 1);
-
-                if (*itr > ARG_OPTIONAL_BEGIN)
-                {
-                    argsTypeVector.erase(itr);
-
-                    if (--argsDiff <= 0)
-                        break;
-                }
-            }
-        }
+        InitializeArgsVector(argsVector);
+        CheckOptionalArgs(argsTypeVector, argsVector.size());
 
         // Finally, we cast all our args to their types
-        for (uint8 i = 0; i < argsTypeVector.size(); ++i)
+        for (uint8 typeIndex = 0, argIndex = 0; typeIndex < argsTypeVector.size(); ++typeIndex, ++argIndex)
         {
-            switch (argsTypeVector[i])
+            switch (argsTypeVector[typeIndex])
             {
                 case ARG_INT:
                 case ARG_INT_OPTIONAL:
-                    _args.push_back(int32(atoi(argsVector[i].c_str())));
+                    _args.push_back(int32(atoi(argsVector[argIndex].c_str())));
                     break;
                 case ARG_UINT:
                 case ARG_UINT_OPTIONAL:
                 {
-                    int value = atoi(argsVector[i].c_str());
+                    int value = atoi(argsVector[argIndex].c_str());
                     if (value < 0)
                         return;
 
@@ -1317,20 +1260,35 @@ void CommandArgs::Initialize(std::initializer_list<CommandArgsType> argsType)
                 }
                 case ARG_FLOAT:
                 case ARG_FLOAT_OPTIONAL:
-                    _args.push_back(float(atof(argsVector[i].c_str())));
+                    _args.push_back(float(atof(argsVector[argIndex].c_str())));
                     break;
                 case ARG_STRING:
                 case ARG_STRING_OPTIONAL:
-                    _args.push_back(argsVector[i]);
+                    _args.push_back(argsVector[argIndex]);
                     break;
+                case ARG_UNIT:
+                case ARG_UNIT_OPTIONAL:
+                {
+                    PlayerResult result;
+                    if (_handler->extractPlayerTarget((char*)argsVector[argIndex].c_str(), &result.PlayerPtr, &result.Guid, &result.Name) && result.PlayerPtr)
+                        _args.push_back((Unit*)result.PlayerPtr);
+                    else if (Unit* selectedUnit = _handler->getSelectedUnit())
+                    {
+                        --argIndex;
+                        _args.push_back((Unit*)selectedUnit);
+                    }
+                    break;
+                }
                 case ARG_PLAYER:
                 case ARG_PLAYER_OPTIONAL:
                 {
                     PlayerResult result;
-                    _handler->extractPlayerTarget((char*)argsVector[i].c_str(), &result.PlayerPtr, &result.Guid, &result.Name);
+                    _handler->extractPlayerTarget((char*)argsVector[argIndex].c_str(), &result.PlayerPtr, &result.Guid, &result.Name);
                     _args.push_back(result);
                     break;
                 }
+                case ARG_OPTIONAL_BEGIN:
+                    ASSERT(false, "Cannot use ARG_OPTIONAL_BEGIN as arg type");
                 default:
                     break;
             }
@@ -1342,5 +1300,79 @@ void CommandArgs::Initialize(std::initializer_list<CommandArgsType> argsType)
     catch (std::exception e)
     {
         _validArgs = false;
+    }
+}
+
+// Split args by spaces, expect for quoted args
+void CommandArgs::InitializeArgsVector(std::vector<std::string>& argsVector)
+{
+    std::ostringstream arg;
+    uint32 argsLength = strlen(_charArgs);
+
+    for (size_t i = 0; i < argsLength; i++)
+    {
+        char c = _charArgs[i];
+        if (c == ' ')
+        {
+            argsVector.push_back(arg.str());
+            arg.str("");
+            arg.clear();
+        }
+        else if (c == '\"')
+        {
+            ++i;
+            while (i < argsLength && _charArgs[i] != '\"')
+                arg << _charArgs[i++];
+        }
+        else if (c == '|')
+        {
+            while (i < argsLength && (i <= 1 || _charArgs[i - 1] != '|' || _charArgs[i] != 'r'))
+                arg << _charArgs[i++];
+
+            arg << 'r';
+        }
+        else
+            arg << _charArgs[i];
+    }
+
+    if (arg.str().size() != 0)
+        argsVector.push_back(arg.str());
+}
+
+// If we have less parameter than expected, check if any of them is optional
+// and reduce argsTypeVector accordingly
+void CommandArgs::CheckOptionalArgs(std::vector<CommandArgsType>& argsTypeVector, uint8 argsVectorSize)
+{
+    uint8 argsTypeVectorSize = argsTypeVector.size();
+
+    // Check if any parameter is optionnal
+    if (argsVectorSize == argsTypeVectorSize)
+        return;
+
+    if (argsVectorSize > argsTypeVectorSize)
+        throw std::invalid_argument("");
+
+    uint8 optionalCount = uint8(std::count_if(argsTypeVector.begin(), argsTypeVector.end(), [](CommandArgsType const& type)
+    {
+        return type > ARG_OPTIONAL_BEGIN;
+    }));
+
+    int8 argsDiff = argsTypeVectorSize - argsVectorSize;
+
+    if (optionalCount < argsDiff)
+        throw std::invalid_argument("");
+
+    for (uint8 i = argsTypeVectorSize; i != 0; --i)
+    {
+        auto itr = argsTypeVector.begin();
+        std::advance(itr, i - 1);
+
+        if (*itr > ARG_OPTIONAL_BEGIN)
+        {
+            argsTypeVector.erase(itr);
+
+            if (--argsDiff <= 0)
+                break;
+        }
     }
 }

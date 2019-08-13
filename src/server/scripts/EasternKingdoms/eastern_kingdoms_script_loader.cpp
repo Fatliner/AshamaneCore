@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -241,6 +241,8 @@ void AddSC_ghostlands();
 void AddSC_hinterlands();
 void AddSC_ironforge();
 void AddSC_isle_of_queldanas();
+void AddSC_loch_modan();
+void AddSC_northern_stranglethorn();
 void AddSC_redridge_mountains();
 void AddSC_silverpine_forest();
 void AddSC_stormwind_city();
@@ -483,6 +485,8 @@ void AddEasternKingdomsScripts()
     AddSC_hinterlands();
     AddSC_ironforge();
     AddSC_isle_of_queldanas();
+    AddSC_northern_stranglethorn();
+    AddSC_loch_modan();
     AddSC_redridge_mountains();
     AddSC_silverpine_forest();
     AddSC_stormwind_city();

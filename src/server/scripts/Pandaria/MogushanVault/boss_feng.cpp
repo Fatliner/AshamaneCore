@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  * Copyright (C) 2016 Firestorm Servers <https://firestorm-servers.com>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -322,7 +322,7 @@ class boss_feng : public CreatureScript
 
                 /*if (me->GetMap()->IsLFR())
                 {
-                    me->SetLootRecipient(NULL);
+                    me->ResetLootRecipients();
                     Player* l_Player = me->GetMap()->GetPlayers().begin()->GetSource();
                     if (l_Player && l_Player->GetGroup())
                         sLFGMgr->AutomaticLootAssignation(me, l_Player->GetGroup());
@@ -837,7 +837,7 @@ class mob_siphon_shield : public CreatureScript
                 me->CastSpell(me, SPELL_FIST_BARRIER, false);
                 events.ScheduleEvent(EVENT_SHIELD_BARRIER,   6000);
                 events.ScheduleEvent(EVENT_SHIELD_CASTSOULS, 2000);
-                // me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_NPC);
+                // me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_NPC));
             }
 
             void DoAction(const int32 action) override
@@ -1405,9 +1405,9 @@ class spell_mogu_arcane_velocity : public SpellScriptLoader
 
                 float distance = caster->GetExactDist2d(target);
 
-                uint8 mode = GetCaster()->GetInstanceScript()->instance->GetSpawnMode();
-                int32 mindmg  = (mode == DIFFICULTY_10_N ? 39000 : (mode == DIFFICULTY_25_N ? 44850 : (mode == DIFFICULTY_10_HC ? 58500 : (mode == DIFFICULTY_25_HC ? 67275 : 16770))));
-                int32 range   = (mode == DIFFICULTY_10_N ?  2000 : (mode == DIFFICULTY_25_N ?  2300 : (mode == DIFFICULTY_10_HC ?  3000 : (mode == DIFFICULTY_25_HC ?  3450 :   860))));
+                Difficulty difficulty = GetCaster()->GetInstanceScript()->instance->GetDifficultyID();
+                int32 mindmg  = (difficulty == DIFFICULTY_10_N ? 39000 : (difficulty == DIFFICULTY_25_N ? 44850 : (difficulty == DIFFICULTY_10_HC ? 58500 : (difficulty == DIFFICULTY_25_HC ? 67275 : 16770))));
+                int32 range   = (difficulty == DIFFICULTY_10_N ?  2000 : (difficulty == DIFFICULTY_25_N ?  2300 : (difficulty == DIFFICULTY_10_HC ?  3000 : (difficulty == DIFFICULTY_25_HC ?  3450 :   860))));
 
                 if (distance >= 0.0f && distance <= 60.0f)
                     SetHitDamage(mindmg + int32(range * (distance / MAX_DIST)));

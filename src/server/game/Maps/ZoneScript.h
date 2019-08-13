@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -23,6 +23,7 @@
 #include "ObjectGuid.h"
 #include "ScriptMgr.h"
 
+class Area;
 class Creature;
 class GameObject;
 class Unit;
@@ -61,7 +62,7 @@ class TC_GAME_API ZoneScript : public ScriptObject
         // Called when a player successfully enters or exit the zone.
         virtual void OnPlayerEnter(Player* /*player*/) { }
         virtual void OnPlayerExit(Player* /*player*/) { }
-        virtual void OnPlayerAreaUpdate(Player* /*player*/, uint32 /*newAreaId*/, uint32 /*oldAreaId*/) { }
+        virtual void OnPlayerAreaUpdate(Player* /*player*/, Area* /*newAreaId*/, Area* /*oldAreaId*/) { }
 
         //All-purpose data storage ObjectGuid
         virtual ObjectGuid GetGuidData(uint32 DataId) const { auto itr = m_datasGUID.find(DataId); if (itr != m_datasGUID.end()) return itr->second; else return ObjectGuid::Empty; }

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -23,6 +23,7 @@ Category: commandscripts
 EndScriptData */
 
 #include "ScriptMgr.h"
+#include "CharacterCache.h"
 #include "Chat.h"
 #include "Language.h"
 #include "Log.h"
@@ -40,12 +41,37 @@ public:
     {
         static std::vector<ChatCommand> arenaCommandTable =
         {
+            { "end",            rbac::RBAC_PERM_COMMAND_ARENA,      true,  &HandleEndArenaCommand,          "" },
         };
         static std::vector<ChatCommand> commandTable =
         {
-            { "arena",          rbac::RBAC_PERM_COMMAND_ARENA,     false, NULL,                       "", arenaCommandTable },
+            { "arena",          rbac::RBAC_PERM_COMMAND_ARENA,      false, NULL,         "", arenaCommandTable },
         };
         return commandTable;
+    }
+
+    static bool HandleEndArenaCommand(ChatHandler* handler, char const* args)
+    {
+        CommandArgs cmdArgs = CommandArgs(handler, args, { CommandArgs::ARG_STRING });
+        if (!cmdArgs.ValidArgs())
+            return false;
+
+        std::string winnerStr = cmdArgs.GetNextArg<std::string>();
+        if (winnerStr != "horde" && winnerStr != "alliance"
+         && winnerStr != "green" && winnerStr != "gold"
+         && winnerStr != "none")
+            return false;
+
+        uint32 winner = (winnerStr == "horde" || winnerStr == "green") ? HORDE : (winnerStr != "none" ? ALLIANCE: 0);
+
+        Player* player = handler->getSelectedPlayerOrSelf();
+        Battleground* bg = player->GetBattleground();
+
+        if (!bg)
+            return false;
+
+        bg->EndBattleground(winner);
+        return true;
     }
 };
 

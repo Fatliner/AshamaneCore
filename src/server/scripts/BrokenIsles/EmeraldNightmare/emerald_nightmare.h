@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -51,6 +51,12 @@ enum GameObjects
 {
     GOB_NYTHENDRA_ENTRANCE_1    = 251535,
     GOB_NYTHENDRA_ENTRANCE_2    = 251536,
+};
+
+enum SpellVisualKit
+{
+    SPELL_VISUAL_KIT_EMERALD_NIGHTMARE_ENTRANCE_LOCATION = 70900,
+    SPELL_VISUAL_KIT_EMERALD_NIGHTMATE_POST_XAVIUS_EXIT  = 74270,
 };
 
 #endif

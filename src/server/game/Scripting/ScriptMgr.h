@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -25,6 +25,7 @@
 #include <boost/property_tree/ptree.hpp>
 
 class AccountMgr;
+class Area;
 class AreaTrigger;
 class AreaTriggerAI;
 class AuctionHouseObject;
@@ -409,7 +410,7 @@ class TC_GAME_API UnitScript : public ScriptObject
         virtual void OnHeal(Unit* /*healer*/, Unit* /*reciever*/, uint32& /*gain*/) { }
 
         // Called when a unit deals damage to another unit
-        virtual void OnDamage(Unit* /*attacker*/, Unit* /*victim*/, uint32& /*damage*/) { }
+        virtual void OnDamage(Unit* /*attacker*/, Unit* /*victim*/, uint32& /*damage*/, SpellInfo const* /*spellProto*/) { }
 
         // Called when DoT's Tick Damage is being Dealt
         virtual void ModifyPeriodicDamageAurasTick(Unit* /*target*/, Unit* /*attacker*/, uint32& /*damage*/) { }
@@ -418,7 +419,7 @@ class TC_GAME_API UnitScript : public ScriptObject
         virtual void ModifyMeleeDamage(Unit* /*target*/, Unit* /*attacker*/, uint32& /*damage*/) { }
 
         // Called when Spell Damage is being Dealt
-        virtual void ModifySpellDamageTaken(Unit* /*target*/, Unit* /*attacker*/, int32& /*damage*/) { }
+        virtual void ModifySpellDamageTaken(Unit* /*target*/, Unit* /*attacker*/, int32& /*damage*/, SpellInfo const* /*spellInfo*/) { }
 };
 
 class TC_GAME_API CreatureScript : public UnitScript, public UpdatableScript<Creature>
@@ -765,10 +766,10 @@ class TC_GAME_API PlayerScript : public UnitScript
         virtual void OnBindToInstance(Player* /*player*/, Difficulty /*difficulty*/, uint32 /*mapId*/, bool /*permanent*/, uint8 /*extendState*/) { }
 
         // Called when a player switches to a new zone
-        virtual void OnUpdateZone(Player* /*player*/, uint32 /*newZone*/, uint32 /*oldZone*/, uint32 /*newArea*/) { }
+        virtual void OnUpdateZone(Player* /*player*/, Area* /*newArea*/, Area* /*oldArea*/) { }
 
         // Called when a player switches to a new area
-        virtual void OnUpdateArea(Player* /*player*/, uint32 /*newArea*/, uint32 /*oldArea*/) { }
+        virtual void OnUpdateArea(Player* /*player*/, Area* /*newArea*/, Area* /*oldArea*/) { }
 
         // Called when a player changes to a new map (after moving to new map)
         virtual void OnMapChanged(Player* /*player*/) { }
@@ -808,6 +809,9 @@ class TC_GAME_API PlayerScript : public UnitScript
 
         // Called when a player complete some scene
         virtual void OnSceneComplete(Player* /*player*/, uint32 /*sceneInstanceID*/) { }
+
+        // Called when a player presses release when he died
+        virtual void OnPlayerRepop(Player* /*player*/) { }
 
         // Called when a player completes a movie
         virtual void OnMovieComplete(Player* /*player*/, uint32 /*movieId*/) { }
@@ -961,6 +965,9 @@ class TC_GAME_API ConversationScript : public ScriptObject
 
         // Called when Conversation is created but not added to Map yet.
         virtual void OnConversationCreate(Conversation* /*conversation*/, Unit* /*creator*/) { }
+
+        // Called when Conversation is removed
+        virtual void OnConversationRemove(Conversation* /*conversation*/, Unit* /*creator*/) { }
 };
 
 class TC_GAME_API SceneScript : public ScriptObject
@@ -1237,8 +1244,8 @@ class TC_GAME_API ScriptMgr
         void OnPlayerFailedDelete(ObjectGuid guid, uint32 accountId);
         void OnPlayerSave(Player* player);
         void OnPlayerBindToInstance(Player* player, Difficulty difficulty, uint32 mapid, bool permanent, uint8 extendState);
-        void OnPlayerUpdateZone(Player* player, uint32 newZone, uint32 oldZone, uint32 newArea);
-        void OnPlayerUpdateArea(Player* player, uint32 newArea, uint32 oldArea);
+        void OnPlayerUpdateZone(Player* player, Area* newArea, Area* oldArea);
+        void OnPlayerUpdateArea(Player* player, Area* newArea, Area* oldArea);
         void OnQuestAccept(Player* player, const Quest* quest);
         void OnQuestReward(Player* player, const Quest* quest);
         void OnObjectiveValidate(Player* player, uint32 questID, uint32 objectiveID);
@@ -1251,6 +1258,7 @@ class TC_GAME_API ScriptMgr
         void OnSceneTriggerEvent(Player* player, uint32 sceneInstanceId, std::string event);
         void OnSceneCancel(Player* player, uint32 sceneInstanceId);
         void OnSceneComplete(Player* player, uint32 sceneInstanceId);
+        void OnPlayerRepop(Player* player);
         void OnMovieComplete(Player* player, uint32 movieId);
         void OnPlayerChoiceResponse(Player* player, uint32 choiceId, uint32 responseId);
         void OnCooldownStart(Player* player, SpellInfo const* spellInfo, uint32 itemId, int32& cooldown, uint32& categoryId, int32& categoryCooldown);
@@ -1296,10 +1304,10 @@ class TC_GAME_API ScriptMgr
     public: /* UnitScript */
 
         void OnHeal(Unit* healer, Unit* reciever, uint32& gain);
-        void OnDamage(Unit* attacker, Unit* victim, uint32& damage);
+        void OnDamage(Unit* attacker, Unit* victim, uint32& damage, SpellInfo const* spellProto);
         void ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage);
         void ModifyMeleeDamage(Unit* target, Unit* attacker, uint32& damage);
-        void ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage);
+        void ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage, SpellInfo const* spellInfo);
 
     public: /* AreaTriggerEntityScript */
 
@@ -1312,6 +1320,7 @@ class TC_GAME_API ScriptMgr
     public: /* ConversationScript */
 
         void OnConversationCreate(Conversation* conversation, Unit* creator);
+        void OnConversationRemove(Conversation* conversation, Unit* creator);
 
     public: /* SceneScript */
 
@@ -1372,6 +1381,11 @@ class GenericCreatureScript : public CreatureScript
         CreatureAI* GetAI(Creature* me) const override { return new AI(me); }
 };
 #define RegisterCreatureAI(ai_name) new GenericCreatureScript<ai_name>(#ai_name)
+
+#define RegisterSceneScript(script) new script()
+#define RegisterQuestScript(script) new script()
+#define RegisterConversationScript(script) new script()
+#define RegisterPlayerScript(script) new script()
 
 template <class AI, AI*(*AIFactory)(Creature*)>
 class FactoryCreatureScript : public CreatureScript

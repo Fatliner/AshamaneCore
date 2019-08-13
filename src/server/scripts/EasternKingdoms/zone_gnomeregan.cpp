@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -32,6 +32,7 @@ EndScriptData */
 #include "Vehicle.h"
 #include "MotionMaster.h"
 #include "TemporarySummon.h"
+#include "GameObject.h"
 
 enum GnomeCreatureIds
 {
@@ -105,7 +106,7 @@ public:
             if (TempSummon* agent = player->SummonCreature(NPC_IMUN_AGENT, SpawnPosition, TEMPSUMMON_TIMED_DESPAWN, 60000, 0, true))
             {
                 agent->SetSpeed(MOVE_RUN, 1.0f);
-                agent->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE);
+                agent->AddUnitFlag(UnitFlags(UNIT_FLAG_IMMUNE_TO_PC | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_NOT_SELECTABLE));
                 agent->SetReactState(REACT_PASSIVE);
                 agent->AI()->Talk(0, player);
                 agent->GetMotionMaster()->MovePath(MOVE_IMUN_AGENT, false);
@@ -319,11 +320,36 @@ public:
     }
 };
 
+struct npc_multi_bot : public ScriptedAI
+{
+    npc_multi_bot(Creature* creature) : ScriptedAI(creature) { }
+
+    void Reset() override
+    {
+        me->GetScheduler().Schedule(2s, [this](TaskContext context)
+        {
+            if (GameObject* gobject = me->FindNearestGameObject(203975, 5))
+            {
+                if (me->GetOwner()->IsPlayer())
+                {
+                    Talk(0);
+                    gobject->SetGoState(GO_STATE_ACTIVE);
+                    me->CastSpell(me, 79424, true);
+                    me->CastSpell(me, 79422, true);
+                }
+            }
+
+            context.Repeat();
+        });
+    }
+};
+
 void AddSC_zone_gnomeregan()
 {
     new npc_nevin_twistwrench();
     new npc_carvo_blastbolt();
     new npc_sanitron_5000();
     new npc_gnomeregan_torben();
+    RegisterCreatureAI(npc_multi_bot);
 }
 

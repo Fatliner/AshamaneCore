@@ -1,6 +1,19 @@
 /*
-* Ordered alphabetically using scriptname.
-*/
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include "CellImpl.h"
 #include "GridNotifiers.h"
@@ -24,7 +37,8 @@ enum MasterySpells
     SPELL_MAGE_GLACIAL_SPIKE_DAMAGE          = 228600,
     SPELL_MAGE_GLACIAL_SPIKE_AMOUNT          = 214325,
     SPELL_MAGE_IGNITE                        = 12846,
-    SPELL_MAGE_IGNITE_AURA                   = 12654
+    SPELL_MAGE_IGNITE_AURA                   = 12654,
+    SPELL_MAGE_SPLITTING_ICE                 = 56377
 };
 
 const int IcicleAuras[5] = { 214124, 214125, 214126, 214127, 214130 };
@@ -70,7 +84,7 @@ class spell_mastery_icicles_proc : public AuraScript
                     icilesAddSecond = true;
             }
 
-            hitDamage *= (player->GetFloatValue(PLAYER_MASTERY) * 2.25f) / 100.0f;
+            hitDamage *= (player->m_activePlayerData->Mastery * 2.25f) / 100.0f;
 
             // Prevent huge hits on player after hitting low level creatures
             if (player->getLevel() > target->getLevel())
@@ -119,7 +133,7 @@ class spell_mastery_icicles_proc : public AuraScript
                             if (roll_chance_i(20))
                                 basePoints *= 2;
                         }
-                            
+
                         player->CastSpell(target, IcicleHits[smallestIcicle], true);
                         player->CastCustomSpell(target, SPELL_MAGE_ICICLE_DAMAGE, &basePoints, NULL, NULL, true);
                         player->RemoveAura(IcicleAuras[smallestIcicle]);
@@ -231,7 +245,7 @@ class spell_mastery_icicles_proc : public AuraScript
     }
 };
 
-// Icicles (Aura Remove) - (214124, 214125, 214126, 214127, 214130) 
+// Icicles (Aura Remove) - (214124, 214125, 214126, 214127, 214130)
 class spell_mastery_icicles_mod_aura : public AuraScript
 {
     PrepareAuraScript(spell_mastery_icicles_mod_aura);
@@ -329,6 +343,17 @@ class spell_mastery_icicles_glacial_spike : public SpellScript
 
     int32 IcicleDamage;
 
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo(
+            {
+                SPELL_MAGE_SPLITTING_ICE,
+                SPELL_MAGE_GLACIAL_SPIKE_DAMAGE,
+                SPELL_MAGE_ICICLE_AURA,
+                SPELL_MAGE_GLACIAL_SPIKE_PROC
+            });
+    }
+
     void HandleOnCast()
     {
         Player* player = GetCaster()->ToPlayer();
@@ -345,20 +370,25 @@ class spell_mastery_icicles_glacial_spike : public SpellScript
                 player->RemoveAura(IcicleAuras[l_I]);
 
                 IcicleDamage += basePoints;
-            }    
+            }
         }
     }
 
     void HandleOnHit(SpellEffIndex /*effIndex*/)
     {
-        
         Unit* caster = GetCaster();
         Unit* target = GetHitUnit();
-        if (!caster || !target)
+        Unit* explTarget = GetExplTargetUnit();
+        if (!caster || !target || !explTarget)
             return;
 
         int32 damage = GetHitDamage();
         damage += IcicleDamage;
+
+        if (GetCaster()->HasAura(SPELL_MAGE_SPLITTING_ICE))
+            if (SpellEffectInfo const* eff1 = sSpellMgr->GetSpellInfo(SPELL_MAGE_SPLITTING_ICE)->GetEffect(EFFECT_1))
+                if (target != explTarget)
+                    damage = CalculatePct(damage, eff1->CalcValue());
 
         caster->CastCustomSpell(target, SPELL_MAGE_GLACIAL_SPIKE_DAMAGE, &damage, NULL, NULL, true);
 
@@ -373,6 +403,38 @@ class spell_mastery_icicles_glacial_spike : public SpellScript
     {
         OnCast += SpellCastFn(spell_mastery_icicles_glacial_spike::HandleOnCast);
         OnEffectHitTarget += SpellEffectFn(spell_mastery_icicles_glacial_spike::HandleOnHit, EFFECT_0, SPELL_EFFECT_DUMMY);
+    }
+};
+
+// 148022 - Icicle Damage
+class spell_mage_icicle_damage : public SpellScript
+{
+    PrepareSpellScript(spell_mage_icicle_damage);
+
+    bool Validate(SpellInfo const* /*spellInfo*/) override
+    {
+        return ValidateSpellInfo(
+            {
+                SPELL_MAGE_SPLITTING_ICE
+            });
+    }
+
+    void DoEffectHitTarget(SpellEffIndex /*effIndex*/)
+    {
+        Unit* explTarget = GetExplTargetUnit();
+        Unit* hitUnit = GetHitUnit();
+        if (!hitUnit || !explTarget)
+            return;
+
+        if (GetCaster()->HasAura(SPELL_MAGE_SPLITTING_ICE))
+            if (SpellEffectInfo const* eff1 = sSpellMgr->GetSpellInfo(SPELL_MAGE_SPLITTING_ICE)->GetEffect(EFFECT_1))
+                if (hitUnit != explTarget)
+                    SetHitDamage(CalculatePct(GetHitDamage(), eff1->CalcValue()));
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_mage_icicle_damage::DoEffectHitTarget, EFFECT_0, SPELL_EFFECT_DUMMY);
     }
 };
 
@@ -398,7 +460,7 @@ public:
                         const SpellInfo* igniteAura = sSpellMgr->GetSpellInfo(SPELL_MAGE_IGNITE_AURA);
                         if (GetSpellInfo()->Id != SPELL_MAGE_IGNITE_AURA && igniteAura != nullptr)
                         {
-                            float masteryValue = caster->GetFloatValue(PLAYER_MASTERY) * 0.75f;
+                            float masteryValue = caster->ToPlayer()->m_activePlayerData->Mastery * 0.75f;
 
                             int32 basePoints = GetHitDamage() /*+ GetAbsorbedDamage()*/;
                             if (basePoints)
@@ -550,14 +612,66 @@ class spell_mage_mastery_ignite : public AuraScript
     }
 };
 
+// 77220 - Mastery - Chaotic Energy
+class warlock_mastery_chaotic_energy : public PlayerScript
+{
+public:
+    warlock_mastery_chaotic_energy() : PlayerScript("warlock_mastery_chaotic_energy") {}
+
+    enum UsedSpells
+    {
+        SPELL_WARLOCK_CHAOTIC_ENERGIES_MASTERY  = 77220
+    };
+
+    void ModifySpellDamageTaken(Unit* /*target*/, Unit* attacker, int32& damage, SpellInfo const* /*spellInfo*/)
+    {
+        if (Aura* aura = attacker->GetAura(SPELL_WARLOCK_CHAOTIC_ENERGIES_MASTERY))
+        {
+            uint32 const maxDamageImprovePercent = uint32(ceil(float(aura->GetEffect(EFFECT_0)->GetAmount()) / 2.f));
+            AddPct(damage, maxDamageImprovePercent + urand(0, maxDamageImprovePercent));
+        }
+    }
+};
+
+// 115636 - Mastery - Combo Strike
+class monk_mastery_combo_strike : public PlayerScript
+{
+public:
+    monk_mastery_combo_strike() : PlayerScript("monk_mastery_combo_strike") {}
+
+    enum UsedSpells
+    {
+        SPELL_MONK_MASTERY_COMBO_STRIKE = 115636
+    };
+
+    void ModifySpellDamageTaken(Unit* /*target*/, Unit* attacker, int32& damage, SpellInfo const* spellInfo)
+    {
+        if (!spellInfo)
+            return;
+
+        if (Aura* aura = attacker->GetAura(SPELL_MONK_MASTERY_COMBO_STRIKE))
+        {
+            uint32 lastUsedSpellId = attacker->Variables.GetValue<uint32>("monk_mastery_combo_strike", uint32(0));
+            if (lastUsedSpellId != spellInfo->Id)
+            {
+                AddPct(damage, aura->GetEffect(EFFECT_0)->GetAmount());
+                attacker->Variables.Set("monk_mastery_combo_strike", spellInfo->Id);
+            }
+        }
+    }
+};
+
 void AddSC_mastery_spell_scripts()
 {
     new spell_mastery_ignite();
-    
+
     RegisterAuraScript(spell_mastery_icicles_proc);
     RegisterAuraScript(spell_mastery_icicles_periodic);
     RegisterAuraScript(spell_mastery_icicles_mod_aura);
     RegisterAuraScript(spell_mage_mastery_ignite);
-    
+    RegisterSpellScript(spell_mage_icicle_damage);
     RegisterSpellScript(spell_mastery_icicles_glacial_spike);
+
+    new warlock_mastery_chaotic_energy();
+    new monk_mastery_combo_strike();
 }

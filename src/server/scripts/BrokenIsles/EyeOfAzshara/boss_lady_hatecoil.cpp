@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -88,8 +88,8 @@ struct boss_lady_hatecoil : public BossAI
         {
             _arcanistsDead = true;
             me->RemoveAurasDueToSpell(SPELL_ARCANE_SHIELDING);
-            me->SetUInt32Value(UNIT_FIELD_BYTES_1, 0);
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_IMMUNE_TO_PC);
+            me->SetStandState(UNIT_STAND_STATE_STAND);
+            me->RemoveUnitFlag(UNIT_FLAG_IMMUNE_TO_PC);
         }
     }
 
@@ -142,6 +142,30 @@ struct boss_lady_hatecoil : public BossAI
 
 private:
     bool _arcanistsDead = false;
+};
+
+// 193597
+class spell_lady_hatecoil_static_nova : public SpellScript
+{
+    PrepareSpellScript(spell_lady_hatecoil_static_nova);
+
+    void FilterTargets(std::list<WorldObject*>& targets)
+    {
+        targets.remove_if([](WorldObject* object)
+        {
+            if (Unit* target = object->ToUnit())
+                if (target->FindNearestCreature(NPC_SAND_DUNE, 5.0f, true))
+                    return true;
+
+            return false;
+        });
+    }
+
+    void Register() override
+    {
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_lady_hatecoil_static_nova::FilterTargets, EFFECT_0, TARGET_UNIT_SRC_AREA_ENEMY);
+        OnObjectAreaTargetSelect += SpellObjectAreaTargetSelectFn(spell_lady_hatecoil_static_nova::FilterTargets, EFFECT_1, TARGET_UNIT_SRC_AREA_ENEMY);
+    }
 };
 
 // 193611
@@ -332,6 +356,7 @@ void AddSC_boss_lady_hatecoil()
     RegisterCreatureAI(boss_lady_hatecoil);
     RegisterCreatureAI(npc_lady_hatecoil_monsoon);
 
+    RegisterSpellScript(spell_lady_hatecoil_static_nova);
     RegisterSpellScript(spell_lady_hatecoil_focused_lightning);
     RegisterSpellScript(spell_lady_hatecoil_beckon_storm);
     RegisterSpellScript(spell_lady_hatecoil_curse_of_the_witch);

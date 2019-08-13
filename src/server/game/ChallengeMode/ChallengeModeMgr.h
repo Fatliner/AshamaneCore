@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -31,6 +31,9 @@ public:
     uint32 GetHealthMultiplier(uint8 challengeLevel);
 
     uint32 GetRandomChallengeId(uint32 flags = 4);
+
+    std::vector<int32> GetBonusListIdsForRewards(uint32 baseItemIlevel, uint8 challengeLevel);
+    void Reward(Player* player, uint8 challengeLevel);
 };
 
 #define sChallengeModeMgr ChallengeModeMgr::instance()

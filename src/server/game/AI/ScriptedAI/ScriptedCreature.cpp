@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -125,12 +125,10 @@ void SummonList::DoActionImpl(int32 action, StorageType const& summons)
 
 ScriptedAI::ScriptedAI(Creature* creature) : CreatureAI(creature),
     IsFleeing(false),
-    summons(creature),
-    instance(creature->GetInstanceScript()),
     _isCombatMovementAllowed(true)
 {
     _isHeroic = me->GetMap()->IsHeroic();
-    _difficulty = Difficulty(me->GetMap()->GetSpawnMode());
+    _difficulty = me->GetMap()->GetDifficultyID();
 }
 
 void ScriptedAI::AttackStartNoMove(Unit* who)
@@ -157,6 +155,16 @@ void ScriptedAI::UpdateAI(uint32 diff)
         return;
 
     events.Update(diff);
+
+    if (me->HasUnitState(UNIT_STATE_CASTING))
+        return;
+
+    while (uint32 eventId = events.ExecuteEvent())
+    {
+        ExecuteEvent(eventId);
+        if (me->HasUnitState(UNIT_STATE_CASTING))
+            return;
+    }
 
     DoMeleeAttackIfReady();
 }
@@ -226,7 +234,7 @@ SpellInfo const* ScriptedAI::SelectSpell(Unit* target, uint32 school, uint32 mec
         return nullptr;
 
     //Silenced so we can't cast
-    if (me->HasFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_SILENCED))
+    if (me->HasUnitFlag(UNIT_FLAG_SILENCED))
         return nullptr;
 
     //Using the extended script system we first create a list of viable spells
@@ -462,6 +470,7 @@ void BossAI::_Reset()
     me->ResetLootMode();
     events.Reset();
     summons.DespawnAll();
+    me->RemoveAllAreaTriggers();
     me->GetScheduler().CancelAll();
     if (instance)
         instance->SetBossState(_bossId, NOT_STARTED);
@@ -492,6 +501,12 @@ void BossAI::_KilledUnit(Unit* victim)
 {
     if (victim->IsPlayer() && urand(0, 1))
         Talk(BOSS_TALK_KILL_PLAYER);
+}
+
+void BossAI::_DamageTaken(Unit* /*attacker*/, uint32& damage)
+{
+    while (uint32 eventId = damageEvents.OnDamageTaken(damage))
+        ExecuteEvent(eventId);
 }
 
 void BossAI::_EnterCombat(bool showFrameEngage /*= true*/)
@@ -541,26 +556,6 @@ void BossAI::SummonedCreatureDespawn(Creature* summon)
     summons.Despawn(summon);
 }
 
-void BossAI::UpdateAI(uint32 diff)
-{
-    if (!UpdateVictim())
-        return;
-
-    events.Update(diff);
-
-    if (me->HasUnitState(UNIT_STATE_CASTING))
-        return;
-
-    while (uint32 eventId = events.ExecuteEvent())
-    {
-        ExecuteEvent(eventId);
-        if (me->HasUnitState(UNIT_STATE_CASTING))
-            return;
-    }
-
-    DoMeleeAttackIfReady();
-}
-
 bool BossAI::CanAIAttack(Unit const* target) const
 {
     return CheckBoundary(target);
@@ -590,11 +585,61 @@ void BossAI::_DespawnAtEvade(uint32 delayToRespawn, Creature* who)
         instance->SetBossState(_bossId, FAIL);
 }
 
+// StaticBossAI - for bosses that shouldn't move, and cast a spell when player are too far away
+
+void StaticBossAI::_Reset()
+{
+    BossAI::_Reset();
+    SetCombatMovement(false);
+    _InitStaticSpellCast();
+}
+
+void StaticBossAI::_InitStaticSpellCast()
+{
+    SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(_staticSpell);
+    if (!spellInfo)
+        return;
+
+    bool isAura = spellInfo->HasAura(me->GetMap()->GetDifficultyID());
+    bool isArea = spellInfo->IsAffectingArea(me->GetMap()->GetDifficultyID());
+
+    me->GetScheduler().Schedule(2s, [this, isAura, isArea](TaskContext context)
+    {
+        // Check if any player in range
+        for (auto threat : me->getThreatManager().getThreatList())
+        {
+            if (me->IsWithinCombatRange(threat->getTarget(), me->GetCombatReach()))
+            {
+                me->RemoveAurasDueToSpell(_staticSpell);
+                context.Repeat();
+                return;
+            }
+        }
+
+        // Else, cast spell depending of its effects
+        if (isAura)
+        {
+            if (!me->HasAura(_staticSpell))
+                me->CastSpell(me, _staticSpell, false);
+        }
+        else if (isArea)
+        {
+            me->CastSpell(nullptr, _staticSpell, false);
+        }
+        else
+        {
+            if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM))
+                me->CastSpell(target, _staticSpell, false);
+        }
+
+        context.Repeat();
+    });
+}
+
 // WorldBossAI - for non-instanced bosses
 
 WorldBossAI::WorldBossAI(Creature* creature) :
-    ScriptedAI(creature),
-    summons(creature) { }
+    ScriptedAI(creature) { }
 
 void WorldBossAI::_Reset()
 {
@@ -630,26 +675,6 @@ void WorldBossAI::JustSummoned(Creature* summon)
 void WorldBossAI::SummonedCreatureDespawn(Creature* summon)
 {
     summons.Despawn(summon);
-}
-
-void WorldBossAI::UpdateAI(uint32 diff)
-{
-    if (!UpdateVictim())
-        return;
-
-    events.Update(diff);
-
-    if (me->HasUnitState(UNIT_STATE_CASTING))
-        return;
-
-    while (uint32 eventId = events.ExecuteEvent())
-    {
-        ExecuteEvent(eventId);
-        if (me->HasUnitState(UNIT_STATE_CASTING))
-            return;
-    }
-
-    DoMeleeAttackIfReady();
 }
 
 void GetPositionWithDistInOrientation(Position* pUnit, float dist, float orientation, float& x, float& y)

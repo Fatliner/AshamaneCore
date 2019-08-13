@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -42,7 +42,6 @@ enum Says
     SAY_RECAST_GRAVITY          = 5,
     SAY_DEATH                   = 6
 };
-
 
 enum Spells
 {
@@ -170,7 +169,7 @@ public:
 
             // Enable the Translocation Orb Exit
             if (GameObject* escapeOrb = ObjectAccessor::GetGameObject(*me, instance->GetGuidData(DATA_ESCAPE_ORB)))
-                escapeOrb->RemoveFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                escapeOrb->RemoveFlag(GO_FLAG_NOT_SELECTABLE);
         }
 
         void DamageTaken(Unit* /*done_by*/, uint32 &damage) override
@@ -185,9 +184,8 @@ public:
         }
 
         void MoveInLineOfSight(Unit* who) override
-
         {
-            if (!HasTaunted && me->IsWithinDistInMap(who, 40.0f))
+            if (who->IsPlayer() && !HasTaunted && me->IsWithinDistInMap(who, 40.0f))
             {
                 Talk(SAY_AGGRO);
                 HasTaunted = true;
@@ -315,7 +313,7 @@ public:
                         Creature* Phoenix = me->SummonCreature(CREATURE_PHOENIX, x, y, LOCATION_Z, 0, TEMPSUMMON_TIMED_OR_CORPSE_DESPAWN, 60000);
                         if (Phoenix)
                         {
-                            Phoenix->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE + UNIT_FLAG_NON_ATTACKABLE);
+                            Phoenix->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE));
                             SetThreatList(Phoenix);
                             Phoenix->AI()->AttackStart(target);
                         }
@@ -454,7 +452,7 @@ public:
         {
             Initialize();
 
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+            me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
             me->setFaction(14);
 
             DoCast(me, SPELL_FLAMESTRIKE2, true);
@@ -508,7 +506,7 @@ public:
 
         void Reset() override
         {
-            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE + UNIT_FLAG_NON_ATTACKABLE);
+            me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE | UNIT_FLAG_NON_ATTACKABLE));
             me->SetDisableGravity(true);
             DoCast(me, SPELL_PHOENIX_BURN, true);
             Initialize();
@@ -541,7 +539,7 @@ public:
                 me->ModifyAuraState(AURA_STATE_HEALTHLESS_20_PERCENT, false);
                 me->ModifyAuraState(AURA_STATE_HEALTHLESS_25_PERCENT, false);
                 me->ModifyAuraState(AURA_STATE_HEALTHLESS_35_PERCENT, false);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 me->ClearAllReactives();
                 me->SetTarget(ObjectGuid::Empty);
                 me->GetMotionMaster()->Clear();
@@ -659,7 +657,7 @@ public:
             DespawnTimer = 30000;
             ChangeTargetTimer = urand(6000, 12000);
 
-            me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+            me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
             me->SetDisableGravity(true);
             me->setFaction(14);
             DoCast(me, SPELL_ARCANE_SPHERE_PASSIVE, true);

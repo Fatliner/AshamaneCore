@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -155,7 +155,7 @@ void AreaTriggerDataStore::LoadAreaTriggerTemplates()
             for (uint8 i = 0; i < MAX_AREATRIGGER_ENTITY_DATA; ++i)
                 areaTriggerTemplate.DefaultDatas.Data[i] = fields[3 + i].GetFloat();
 
-            areaTriggerTemplate.ScriptId = sObjectMgr->GetScriptId(fields[9].GetString());
+            areaTriggerTemplate.ScriptId = sObjectMgr->GetScriptIdOrAdd(fields[9].GetString());
             areaTriggerTemplate.PolygonVertices = std::move(verticesByAreaTrigger[areaTriggerTemplate.Id]);
             areaTriggerTemplate.PolygonVerticesTarget = std::move(verticesTargetByAreaTrigger[areaTriggerTemplate.Id]);
             areaTriggerTemplate.Actions = std::move(actionsByAreaTrigger[areaTriggerTemplate.Id]);
@@ -166,8 +166,8 @@ void AreaTriggerDataStore::LoadAreaTriggerTemplates()
         while (templates->NextRow());
     }
 
-    //                                                                  0            1              2            3             4             5              6                  7             8
-    if (QueryResult areatriggerSpellMiscs = WorldDatabase.Query("SELECT SpellMiscId, AreaTriggerId, MoveCurveId, ScaleCurveId, MorphCurveId, FacingCurveId, DecalPropertiesId, TimeToTarget, TimeToTargetScale FROM `spell_areatrigger`"))
+    //                                                                  0            1              2            3             4             5              6       7          8                  9             10
+    if (QueryResult areatriggerSpellMiscs = WorldDatabase.Query("SELECT SpellMiscId, AreaTriggerId, MoveCurveId, ScaleCurveId, MorphCurveId, FacingCurveId, AnimId, AnimKitId, DecalPropertiesId, TimeToTarget, TimeToTargetScale FROM `spell_areatrigger`"))
     {
         do
         {
@@ -201,10 +201,13 @@ void AreaTriggerDataStore::LoadAreaTriggerTemplates()
 
 #undef VALIDATE_AND_SET_CURVE
 
-            miscTemplate.DecalPropertiesId = areatriggerSpellMiscFields[6].GetUInt32();
+            miscTemplate.AnimId = areatriggerSpellMiscFields[6].GetInt32();
+            miscTemplate.AnimKitId = areatriggerSpellMiscFields[7].GetInt32();
 
-            miscTemplate.TimeToTarget       = areatriggerSpellMiscFields[7].GetUInt32();
-            miscTemplate.TimeToTargetScale  = areatriggerSpellMiscFields[8].GetUInt32();
+            miscTemplate.DecalPropertiesId = areatriggerSpellMiscFields[8].GetUInt32();
+
+            miscTemplate.TimeToTarget       = areatriggerSpellMiscFields[9].GetUInt32();
+            miscTemplate.TimeToTargetScale  = areatriggerSpellMiscFields[10].GetUInt32();
 
             miscTemplate.SplinePoints = std::move(splinesBySpellMisc[miscTemplate.MiscId]);
 
@@ -284,10 +287,10 @@ void AreaTriggerDataStore::LoadAreaTriggers()
     }
 
     // Build single time for check spawnmask
-    std::map<uint32, uint32> spawnMasks;
+    std::map<uint32, uint64> spawnMasks;
     for (auto& mapDifficultyPair : sDB2Manager.GetMapDifficulties())
         for (auto& difficultyPair : mapDifficultyPair.second)
-            spawnMasks[mapDifficultyPair.first] |= (1 << difficultyPair.first);
+            spawnMasks[mapDifficultyPair.first] |= UI64LIT(1) << difficultyPair.first;
 
     do
     {
@@ -302,8 +305,8 @@ void AreaTriggerDataStore::LoadAreaTriggers()
         my_temp.position_y  = fields[index++].GetFloat();
         my_temp.position_z  = fields[index++].GetFloat();
         my_temp.map_id      = fields[index++].GetUInt32();
-        my_temp.spawn_mask  = fields[index++].GetUInt32();
-        my_temp.scriptId    = sObjectMgr->GetScriptId(fields[index++].GetString());;
+        my_temp.spawn_mask  = fields[index++].GetUInt64();
+        my_temp.scriptId    = sObjectMgr->GetScriptIdOrAdd(fields[index++].GetString());;
 
         MapEntry const* mapEntry = sMapStore.LookupEntry(my_temp.map_id);
         if (!mapEntry)
@@ -313,8 +316,8 @@ void AreaTriggerDataStore::LoadAreaTriggers()
         }
 
         // Skip spawnMask check for transport maps
-        if (!sObjectMgr->IsTransportMap(my_temp.map_id) && my_temp.spawn_mask & ~spawnMasks[my_temp.spawn_mask])
-            TC_LOG_ERROR("sql.sql", "Table `areatrigger` has areatrigger (GUID: " UI64FMTD ") that have wrong spawn mask %u including unsupported difficulty modes for map (Id: %u).", my_temp.guid, my_temp.spawn_mask, my_temp.map_id);
+        if (!sObjectMgr->IsTransportMap(my_temp.map_id) && my_temp.spawn_mask & ~spawnMasks[my_temp.map_id])
+            TC_LOG_ERROR("sql.sql", "Table `areatrigger` has areatrigger (GUID: " UI64FMTD ") that have wrong spawn mask " UI64FMTD " including unsupported difficulty modes for map (Id: %u, full spawnmask " UI64FMTD ").", my_temp.guid, my_temp.spawn_mask, my_temp.map_id, spawnMasks[my_temp.map_id]);
 
         _areaTriggerData[my_temp.map_id].push_back(my_temp);
 

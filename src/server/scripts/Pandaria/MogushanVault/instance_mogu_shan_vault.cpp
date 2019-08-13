@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  * Copyright (C) 2016 Firestorm Servers <https://firestorm-servers.com>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -182,7 +182,7 @@ class instance_mogu_shan_vault : public InstanceMapScript
                             guardianAliveCount++;
                         }
 
-                        uint32 difficulty = instance->GetSpawnMode();
+                        Difficulty difficulty = instance->GetDifficultyID();
                         bool turnOver = (difficulty == DIFFICULTY_10_N || difficulty == DIFFICULTY_10_HC || difficulty == DIFFICULTY_LFR);
 
                         // In 10N, 10H or LFR, there are only 3 guardians

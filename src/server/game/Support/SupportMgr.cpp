@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2018 TrinityCore <https://www.trinitycore.org/>
+ * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -16,6 +16,7 @@
  */
 
 #include "SupportMgr.h"
+#include "CharacterCache.h"
 #include "Chat.h"
 #include "DatabaseEnv.h"
 #include "Language.h"
@@ -47,7 +48,7 @@ std::string Ticket::GetPlayerName() const
 {
     std::string name;
     if (!_playerGuid.IsEmpty())
-        ObjectMgr::GetPlayerNameByGUID(_playerGuid, name);
+        sCharacterCache->GetCharacterNameByGuid(_playerGuid, name);
 
     return name;
 }
@@ -61,7 +62,7 @@ std::string Ticket::GetAssignedToName() const
 {
     std::string name;
     if (!_assignedTo.IsEmpty())
-        ObjectMgr::GetPlayerNameByGUID(_assignedTo, name);
+        sCharacterCache->GetCharacterNameByGuid(_assignedTo, name);
 
     return name;
 }
@@ -129,7 +130,7 @@ void BugTicket::LoadFromDB(Field* fields)
 void BugTicket::SaveToDB() const
 {
     uint8 idx = 0;
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_GM_BUG);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_GM_BUG);
     stmt->setUInt32(idx, _id);
     stmt->setUInt64(++idx, _playerGuid.GetCounter());
     stmt->setString(++idx, _note);
@@ -147,7 +148,7 @@ void BugTicket::SaveToDB() const
 
 void BugTicket::DeleteFromDB()
 {
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_GM_BUG);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_GM_BUG);
     stmt->setUInt32(0, _id);
     CharacterDatabase.Execute(stmt);
 }
@@ -224,10 +225,10 @@ void ComplaintTicket::LoadChatLineFromDB(Field* fields)
 
 void ComplaintTicket::SaveToDB() const
 {
-    SQLTransaction trans = CharacterDatabase.BeginTransaction();
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
 
     uint8 idx = 0;
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_GM_COMPLAINT);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_GM_COMPLAINT);
     stmt->setUInt32(idx, _id);
     stmt->setUInt64(++idx, _playerGuid.GetCounter());
     stmt->setString(++idx, _note);
@@ -266,7 +267,7 @@ void ComplaintTicket::SaveToDB() const
 
 void ComplaintTicket::DeleteFromDB()
 {
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_GM_COMPLAINT);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_GM_COMPLAINT);
     stmt->setUInt32(0, _id);
     CharacterDatabase.Execute(stmt);
 
@@ -338,7 +339,7 @@ void SuggestionTicket::LoadFromDB(Field* fields)
 void SuggestionTicket::SaveToDB() const
 {
     uint8 idx = 0;
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_GM_SUGGESTION);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_GM_SUGGESTION);
     stmt->setUInt32(idx, _id);
     stmt->setUInt64(++idx, _playerGuid.GetCounter());
     stmt->setString(++idx, _note);
@@ -356,7 +357,7 @@ void SuggestionTicket::SaveToDB() const
 
 void SuggestionTicket::DeleteFromDB()
 {
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_GM_SUGGESTION);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_GM_SUGGESTION);
     stmt->setUInt32(0, _id);
     CharacterDatabase.Execute(stmt);
 }
@@ -380,6 +381,35 @@ std::string SuggestionTicket::FormatViewMessageString(ChatHandler& handler, bool
             ss << handler.PGetParseString(LANG_COMMAND_TICKETLISTCOMMENT, _comment.c_str());
     }
     return ss.str();
+}
+
+void SuggestionTicket::WriteData(std::vector<std::string>& data, std::string & message) const
+{
+    /// HelpFrame.lua
+    /// local category, ticketDescription, ticketOpenTime, oldestTicketTime, updateTime, assignedToGM, openedByGM, waitTimeOverrideMessage, waitTimeOverrideMinutes = ...;
+
+    auto l_ReplaceAll = [](std::string& str, const std::string& from, const std::string& to) {
+        if (from.empty())
+            return;
+        size_t start_pos = 0;
+        while ((start_pos = str.find(from, start_pos)) != std::string::npos) {
+            str.replace(start_pos, from.length(), to);
+            start_pos += to.length(); // In case 'to' contains 'from', like replacing 'x' with 'yx'
+        }
+    };
+
+    std::string l_Message = GetNote();
+    l_ReplaceAll(l_Message, "|", "/");
+    l_ReplaceAll(l_Message, "\n", "$$n");
+    message = l_Message;
+
+    data.push_back(std::to_string(uint16(TICKET_IN_ESCALATION_QUEUE)));
+    data.push_back(std::to_string(GetAge(_createTime)));
+    data.push_back(std::to_string(uint32(float(0))));
+    data.push_back(std::to_string(GetAge(sSupportMgr->GetLastChange())));
+    data.push_back(std::to_string(uint16(false)));
+    data.push_back(std::to_string(uint16(GMTICKET_OPENEDBYGM_STATUS_NOT_OPENED)));
+    data.push_back(std::to_string(uint32(0)));
 }
 
 SupportMgr::SupportMgr() : _supportSystemStatus(false), _ticketSystemStatus(false), _bugSystemStatus(false), _complaintSystemStatus(false), _suggestionSystemStatus(false),
@@ -446,6 +476,16 @@ ComplaintTicketList SupportMgr::GetComplaintsByPlayerGuid(ObjectGuid playerGuid)
     return ret;
 }
 
+SuggestionTicket* SupportMgr::GetOpenSuggestionByPlayerGuid(ObjectGuid playerGuid) const
+{
+    for (auto const& c : _suggestionTicketList)
+        if (c.second->GetPlayerGuid() == playerGuid)
+            if (!c.second->IsClosed())
+                return c.second;
+
+    return nullptr;
+}
+
 void SupportMgr::Initialize()
 {
     SetSupportSystemStatus(sWorld->getBoolConfig(CONFIG_SUPPORT_ENABLED));
@@ -475,7 +515,7 @@ void SupportMgr::LoadBugTickets()
     _lastBugId = 0;
     _openBugTicketCount = 0;
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GM_BUGS);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GM_BUGS);
     PreparedQueryResult result = CharacterDatabase.Query(stmt);
     if (!result)
     {
@@ -515,7 +555,7 @@ void SupportMgr::LoadComplaintTickets()
     _lastComplaintId = 0;
     _openComplaintTicketCount = 0;
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GM_COMPLAINTS);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GM_COMPLAINTS);
     PreparedQueryResult result = CharacterDatabase.Query(stmt);
     if (!result)
     {
@@ -524,7 +564,7 @@ void SupportMgr::LoadComplaintTickets()
     }
 
     uint32 count = 0;
-    PreparedStatement* chatLogStmt;
+    CharacterDatabasePreparedStatement* chatLogStmt;
     PreparedQueryResult chatLogResult;
     do
     {
@@ -570,7 +610,7 @@ void SupportMgr::LoadSuggestionTickets()
     _lastSuggestionId = 0;
     _openSuggestionTicketCount = 0;
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GM_SUGGESTIONS);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_GM_SUGGESTIONS);
     PreparedQueryResult result = CharacterDatabase.Query(stmt);
     if (!result)
     {
@@ -704,7 +744,7 @@ TC_GAME_API void SupportMgr::ResetTickets<BugTicket>()
 
     _lastBugId = 0;
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_ALL_GM_BUGS);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_ALL_GM_BUGS);
     CharacterDatabase.Execute(stmt);
 }
 
@@ -717,7 +757,7 @@ TC_GAME_API void SupportMgr::ResetTickets<ComplaintTicket>()
 
     _lastComplaintId = 0;
 
-    SQLTransaction trans = CharacterDatabase.BeginTransaction();
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
     trans->Append(CharacterDatabase.GetPreparedStatement(CHAR_DEL_ALL_GM_COMPLAINTS));
     trans->Append(CharacterDatabase.GetPreparedStatement(CHAR_DEL_ALL_GM_COMPLAINT_CHATLOGS));
     CharacterDatabase.CommitTransaction(trans);
@@ -732,7 +772,7 @@ TC_GAME_API void SupportMgr::ResetTickets<SuggestionTicket>()
 
     _lastSuggestionId = 0;
 
-    PreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_ALL_GM_SUGGESTIONS);
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_ALL_GM_SUGGESTIONS);
     CharacterDatabase.Execute(stmt);
 }
 
@@ -793,4 +833,65 @@ TC_GAME_API void SupportMgr::ShowClosedList<SuggestionTicket>(ChatHandler& handl
 void SupportMgr::UpdateLastChange()
 {
     _lastChange = uint64(time(nullptr));
+}
+
+
+
+// Custom addon method
+void SupportMgr::SendTicket(WorldSession* session, SuggestionTicket* ticket) const
+{
+    if (!ticket)
+    {
+        session->GetPlayer()->SendCustomMessage("FSC_TICKET_DELETED");
+        return;
+    }
+
+    auto l_StringSplit = [](std::string const& p_Str, char p_Delimeter) -> std::vector<std::string>
+    {
+        std::vector<std::string> l_Result;
+
+        std::stringstream l_StringStream(p_Str);
+        std::string l_Item;
+
+        while (std::getline(l_StringStream, l_Item, p_Delimeter))
+            l_Result.push_back(l_Item);
+
+        return l_Result;
+    };
+
+    std::vector<std::string> data;
+    std::string message = "";
+    ticket->WriteData(data, message);
+
+    session->GetPlayer()->SendCustomMessage("FSC_TICKET_UPDATE_BEG");
+
+    const int l_MaxLineLenght = 180; ///< Magic value
+
+    std::vector<std::string> words = l_StringSplit(message, ' ');
+    std::string buffer = "";
+
+    for (std::string const& word : words)
+    {
+        if ((buffer.length() + 1 + word.length()) <= l_MaxLineLenght)
+            buffer += (!buffer.empty() ? " " : "") + word;
+        else
+        {
+            std::vector<std::string> outData;
+            outData.push_back(buffer);
+
+            session->GetPlayer()->SendCustomMessage("FSC_TICKET_UPDATE_UPD", outData);
+
+            buffer = word;
+        }
+    }
+
+    if (!buffer.empty())
+    {
+        std::vector<std::string> l_OutData;
+        l_OutData.push_back(buffer);
+
+        session->GetPlayer()->SendCustomMessage("FSC_TICKET_UPDATE_UPD", l_OutData);
+    }
+
+    session->GetPlayer()->SendCustomMessage("FSC_TICKET_UPDATE_END", data);
 }

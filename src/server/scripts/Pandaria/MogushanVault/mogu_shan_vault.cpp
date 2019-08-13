@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  * Copyright (C) 2016 Firestorm Servers <https://firestorm-servers.com>
  *
  * This program is free software; you can redistribute it and/or modify it
@@ -172,7 +172,7 @@ class mob_cursed_mogu_sculpture : public CreatureScript
                 playerActivate = ObjectGuid::Empty;
                 activationDone = false;
 
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE|UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE|UNIT_FLAG_NOT_SELECTABLE));
                 me->ApplySpellImmune(0, IMMUNITY_MECHANIC, MECHANIC_CHARM, true);
                 me->SetReactState(REACT_PASSIVE);
                 me->AI()->SetCanSeeEvenInPassiveMode(true);
@@ -228,7 +228,7 @@ class mob_cursed_mogu_sculpture : public CreatureScript
                         case NPC_CURSED_MOGU_SCULPTURE_1:
                         {
                             me->SetReactState(REACT_AGGRESSIVE);
-                            me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE|UNIT_FLAG_NOT_SELECTABLE);
+                            me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE|UNIT_FLAG_NOT_SELECTABLE));
                             me->RemoveAurasDueToSpell(SPELL_BRONZE);
                             me->RemoveAurasDueToSpell(SPELL_POSE_2);
                             me->RemoveAurasDueToSpell(SPELL_POSE_1);
@@ -327,39 +327,30 @@ class mob_cursed_mogu_sculpture : public CreatureScript
 };
 
 // Ghost Essence - 120764
-class spell_ghost_essence : public SpellScriptLoader
+class spell_ghost_essence : public SpellScript
 {
-    public:
-        spell_ghost_essence() : SpellScriptLoader("spell_ghost_essence") { }
+    PrepareSpellScript(spell_ghost_essence);
 
-        class spell_ghost_essence_SpellScript : public SpellScript
+    void HandleHitTarget(SpellEffIndex /*effIndex*/)
+    {
+        if (Creature* target = GetHitCreature())
         {
-            PrepareSpellScript(spell_ghost_essence_SpellScript);
+            target->SetReactState(REACT_AGGRESSIVE);
+            target->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_NOT_SELECTABLE));
+            target->RemoveAurasDueToSpell(SPELL_BRONZE);
+            target->RemoveAurasDueToSpell(SPELL_POSE_2);
+            target->RemoveAurasDueToSpell(SPELL_POSE_1);
+            target->RemoveAurasDueToSpell(SPELL_STONE);
 
-            void HandleOnHit()
-            {
-                if (Unit* target = GetHitUnit())
-                {
-                    target->ToCreature()->SetReactState(REACT_AGGRESSIVE);
-                    target->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE|UNIT_FLAG_NOT_SELECTABLE);
-                    target->RemoveAurasDueToSpell(SPELL_BRONZE);
-                    target->RemoveAurasDueToSpell(SPELL_POSE_2);
-                    target->RemoveAurasDueToSpell(SPELL_POSE_1);
-                    target->RemoveAurasDueToSpell(SPELL_STONE);
-                    target->GetAI()->DoAction(ACTION_CURSED_MOGU_ATTACK_PLAYER);
-                }
-            }
-
-            void Register() override
-            {
-                OnHit += SpellHitFn(spell_ghost_essence_SpellScript::HandleOnHit);
-            }
-        };
-
-        SpellScript* GetSpellScript() const override
-        {
-            return new spell_ghost_essence_SpellScript();
+            if (target->IsAIEnabled)
+                target->GetAI()->DoAction(ACTION_CURSED_MOGU_ATTACK_PLAYER);
         }
+    }
+
+    void Register() override
+    {
+        OnEffectHitTarget += SpellEffectFn(spell_ghost_essence::HandleHitTarget, EFFECT_0, SPELL_EFFECT_APPLY_AURA);
+    }
 };
 
 float quilenNewY[2] = { 1170.0f, 1240.0f };
@@ -824,7 +815,7 @@ class npc_lorewalker_cho : public CreatureScript
                                 {
                                     me->SetOrientation(4.68f);
                                     me->SetFacingTo(4.68f);
-                                    me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                                    me->AddNpcFlag(UNIT_NPC_FLAG_GOSSIP);
                                     SetEscortPaused(true);
                                 }
 
@@ -944,13 +935,13 @@ class npc_lorewalker_cho : public CreatureScript
                         {
                             me->SetOrientation(4.68f);
                             me->SetFacingTo(4.68f);
-                            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            me->AddNpcFlag(UNIT_NPC_FLAG_GOSSIP);
                             SetEscortPaused(true);
                         }
                         break;
                     }
                     case 39:
-                        me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                        me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
                         break;
                     // Stop and wait for the event, and the for the spirit kings, to be done before restarting
                     case 42:
@@ -1086,7 +1077,7 @@ class npc_lorewalker_cho : public CreatureScript
                     {
                         if (pInstance->GetBossState(DATA_ELEGON) != DONE)
                         {
-                            me->SetFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            me->AddNpcFlag(UNIT_NPC_FLAG_GOSSIP);
                             SetEscortPaused(true);
                         }
                         break;
@@ -1096,7 +1087,7 @@ class npc_lorewalker_cho : public CreatureScript
                     {
                         if (pInstance->GetBossState(DATA_ELEGON) != DONE)
                         {
-                            me->RemoveFlag(UNIT_NPC_FLAGS, UNIT_NPC_FLAG_GOSSIP);
+                            me->RemoveNpcFlag(UNIT_NPC_FLAG_GOSSIP);
                             SetEscortPaused(true);
                         }
                         break;
@@ -1193,7 +1184,7 @@ class npc_lorewalker_cho : public CreatureScript
                                 {
                                     button->Use(me);
                                     button->SetGoState(GO_STATE_ACTIVE);
-                                    button->SetFlag(GAMEOBJECT_FLAGS, GO_FLAG_NOT_SELECTABLE);
+                                    button->AddFlag(GO_FLAG_NOT_SELECTABLE);
                                 }
                             }
                         }
@@ -1358,7 +1349,7 @@ class mob_zian : public CreatureScript
             void Reset() override
             {
                 me->SetDisplayId(11686);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 me->SetReactState(REACT_PASSIVE);
                 SetEquipmentSlots(false, 0, 0, 0);
 
@@ -1441,7 +1432,7 @@ class mob_sorcerer_mogu : public CreatureScript
                 allKilled = false;
 
                 me->SetDisplayId(11686);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 me->SetReactState(REACT_PASSIVE);
 
                 events.Reset();
@@ -1466,7 +1457,7 @@ class mob_sorcerer_mogu : public CreatureScript
                         me->AddAura(SPELL_ACTIVATION_VISUAL, me);
                         break;
                     case ACTION_START_FIRST_COMBAT:
-                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                        me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                         me->RemoveAurasDueToSpell(SPELL_ACTIVATION_VISUAL);
                         me->SetReactState(REACT_AGGRESSIVE);
                         events.ScheduleEvent(EVENT_SORCERER_SHADOW_BLAST, 5000);
@@ -1524,7 +1515,7 @@ class mob_qiang : public CreatureScript
             void Reset() override
             {
                 me->SetDisplayId(11686);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 me->SetReactState(REACT_PASSIVE);
                 SetEquipmentSlots(false, 0, 0, 0);
 
@@ -1623,7 +1614,7 @@ class mob_mounted_mogu : public CreatureScript
             void Reset() override
             {
                 me->SetDisplayId(11686);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 me->SetReactState(REACT_PASSIVE);
                 SetEquipmentSlots(false, 0, 0, 0);
                 me->Mount(11686);
@@ -1654,7 +1645,7 @@ class mob_mounted_mogu : public CreatureScript
                     case ACTION_START_SECOND_COMBAT:
                         me->RemoveAurasDueToSpell(SPELL_ACTIVATION_VISUAL);
                         me->SetReactState(REACT_AGGRESSIVE);
-                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                        me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                         events.ScheduleEvent(EVENT_MOUNTED_MOGU_CRUSHING_ATTACKS, urand(5000, 12000));
                         break;
                     case ACTION_END_SECOND_COMBAT:
@@ -1716,7 +1707,7 @@ class mob_subetai : public CreatureScript
             void Reset() override
             {
                 me->SetDisplayId(11686);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 me->SetReactState(REACT_PASSIVE);
                 SetEquipmentSlots(false, 0, 0, 0);
 
@@ -1815,7 +1806,7 @@ class mob_mogu_archer : public CreatureScript
             void Reset() override
             {
                 me->SetDisplayId(11686);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 me->SetReactState(REACT_PASSIVE);
 
                 events.Reset();
@@ -1842,7 +1833,7 @@ class mob_mogu_archer : public CreatureScript
                     case ACTION_START_THIRD_COMBAT:
                         me->RemoveAurasDueToSpell(SPELL_ACTIVATION_VISUAL);
                         me->SetReactState(REACT_AGGRESSIVE);
-                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                        me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                         events.ScheduleEvent(EVENT_MOGU_ARCHER_SHOOT, urand(5000, 12000));
                         break;
                     case ACTION_END_THIRD_COMBAT:
@@ -1906,7 +1897,7 @@ class mob_meng : public CreatureScript
             void Reset() override
             {
                 me->SetDisplayId(11686);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 me->SetReactState(REACT_PASSIVE);
 
                 events.Reset();
@@ -2031,7 +2022,7 @@ class mob_kingsguard : public CreatureScript
             void Reset() override
             {
                 me->SetDisplayId(11686);
-                me->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                me->AddUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                 me->SetReactState(REACT_PASSIVE);
 
                 events.Reset();
@@ -2075,7 +2066,7 @@ class mob_kingsguard : public CreatureScript
                     case ACTION_START_FOURTH_COMBAT:
                         me->RemoveAurasDueToSpell(SPELL_ACTIVATION_VISUAL);
                         me->SetReactState(REACT_AGGRESSIVE);
-                        me->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NOT_SELECTABLE);
+                        me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
                         break;
                     case ACTION_END_FOURTH_COMBAT:
                         me->DespawnOrUnsummon();

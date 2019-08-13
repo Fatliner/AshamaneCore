@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -27,12 +27,12 @@ class playerScript_enter_tanaan : public PlayerScript
 public:
     playerScript_enter_tanaan() : PlayerScript("playerScript_enter_tanaan") { }
 
-    void OnUpdateArea(Player* player, uint32 newAreaId, uint32 /*oldAreaID*/) override
+    void OnUpdateArea(Player* player, Area* newArea, Area* /*oldArea*/) override
     {
         if (player->GetZoneId() != TanaanZones::ZoneTanaanJungle)
             return;
 
-        switch (newAreaId)
+        switch (newArea->GetId())
         {
             case TanaanZones::AreaTheDarkPortal:
             {
@@ -85,11 +85,7 @@ public:
         }
 
         if (player->GetQuestStatus(TanaanQuests::QuestTheBattleOfTheForge) == QUEST_STATUS_REWARDED)
-        {
-            PhaseShift phaseShift;
-            phaseShift.AddUiWorldMapAreaIdSwap((uint32)TanaanZones::TerrainSwapID);
-            PhasingHandler::SendToPlayer(player, phaseShift);
-        }
+            PhasingHandler::AddVisibleMapId(player, TanaanZones::TerrainSwapID);
     }
 
     void OnObjectiveValidate(Player* player, uint32 questId, uint32 objectiveId) override

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -21,9 +21,9 @@
 #include "Player.h"
 #include "ScriptMgr.h"
 
-#define EVENT_MORPH             100
+#define EVENT_MORPH             200
 #define SPELL_CLONE             69828
-#define MAX_CREATURE_HEALTH     100000
+#define MAX_CREATURE_HEALTH     2000000
 
 class PlayerScript_Event_Morph : public PlayerScript
 {

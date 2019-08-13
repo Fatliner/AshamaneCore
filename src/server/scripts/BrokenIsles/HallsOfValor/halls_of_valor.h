@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 AshamaneProject <https://github.com/AshamaneProject>
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -79,6 +79,12 @@ enum Actions
 {
     ACTION_EVENT_START,
     ACTION_CAN_JOIN_COMBAT,
+};
+
+enum SpellVisualKit
+{
+    SPELL_VISUAL_KIT_VALHALLA_ENTRANCE_FIELD_ETERNAL_HUNT = 62761,
+    SPELL_VISUAL_KIT_VALHALLA_EXIT_FIELD_ETERNAL_HUNT     = 82068,
 };
 
 #endif
