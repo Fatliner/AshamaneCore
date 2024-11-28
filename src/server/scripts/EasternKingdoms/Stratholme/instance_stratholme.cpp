@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -32,6 +31,7 @@ EndScriptData */
 #include "Map.h"
 #include "Player.h"
 #include "stratholme.h"
+#include <sstream>
 
 enum Misc
 {
@@ -306,15 +306,16 @@ class instance_stratholme : public InstanceMapScript
                             if (GetData(TYPE_BARON_RUN) == IN_PROGRESS)
                             {
                                 DoRemoveAurasDueToSpellOnPlayers(SPELL_BARON_ULTIMATUM);
-                                Map::PlayerList const& players = instance->GetPlayers();
-                                if (!players.isEmpty())
-                                    for (Map::PlayerList::const_iterator itr = players.begin(); itr != players.end(); ++itr)
-                                        if (Player* player = itr->GetSource())
-                                            if (player->GetQuestStatus(QUEST_DEAD_MAN_PLEA) == QUEST_STATUS_INCOMPLETE)
-                                            {
-                                                player->AreaExploredOrEventHappens(QUEST_DEAD_MAN_PLEA);
-                                                player->KilledMonsterCredit(NPC_YSIDA);
-                                            }
+
+                                DoOnPlayers([](Player* player)
+                                {
+                                    if (player->GetQuestStatus(QUEST_DEAD_MAN_PLEA) == QUEST_STATUS_INCOMPLETE)
+                                    {
+                                        player->AreaExploredOrEventHappens(QUEST_DEAD_MAN_PLEA);
+                                        player->KilledMonsterCredit(NPC_YSIDA);
+                                    }
+                                });
+
                                 SetData(TYPE_BARON_RUN, DONE);
                             }
                         }
@@ -353,7 +354,7 @@ class instance_stratholme : public InstanceMapScript
                 return saveStream.str();
             }
 
-            void Load(const char* in) override
+            void Load(char const* in) override
             {
                 if (!in)
                 {

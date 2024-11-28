@@ -908,7 +908,7 @@ class spell_ultraxion_fading_light : public SpellScriptLoader
 
                 targets.remove_if(DPSCheck());
                 if (Creature* pUltraxion = GetCaster()->ToCreature())
-                    if (Unit* pTarget = pUltraxion->AI()->SelectTarget(SELECT_TARGET_TOPAGGRO, 0, 0.0f, true))
+                    if (Unit* pTarget = pUltraxion->AI()->SelectTarget(SELECT_TARGET_MAXTHREAT, 0, 0.0f, true))
                         targets.remove(pTarget);
 
                 uint32 min_players = 1;
@@ -961,9 +961,6 @@ class spell_ultraxion_fading_light : public SpellScriptLoader
                         }
                         return false;
                     }
-
-                private:
-                    uint32 _spellId;
             };
         };
 
@@ -1020,9 +1017,6 @@ class spell_ultraxion_last_defender_of_azeroth : public SpellScriptLoader
                         }
                         return true;
                     }
-
-                private:
-                    uint32 _spellId;
             };
         };
         SpellScript* GetSpellScript() const override

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -34,7 +34,7 @@ public:
 			me->RemoveNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
 		}
 
-        void DamageTaken(Unit* done_by, uint32& damage) override
+        void DamageTaken(Unit* /*done_by*/, uint32& damage) override
 		{
            // if (Player* player = done_by->ToPlayer())
            // {
@@ -46,9 +46,9 @@ public:
 				        me->RemoveAllAuras();
 				        me->AddUnitFlag(UNIT_FLAG_NON_ATTACKABLE);
 				        me->AddUnitFlag(UNIT_FLAG_NOT_ATTACKABLE_1);
-				        me->setFaction(35);
+				        me->SetFaction(35);
 				        me->CombatStop(true);
-				        me->DeleteThreatList();
+				        ResetThreatList();
 				        me->AddNpcFlag(UNIT_NPC_FLAG_SPELLCLICK);
                         Talk(0);
                     }
@@ -56,7 +56,7 @@ public:
             //}
 		}
 
-		void UpdateAI(const uint32 diff)
+		void UpdateAI(const uint32 /*diff*/) override
 		{
 			DoMeleeAttackIfReady();
 		}

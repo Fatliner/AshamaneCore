@@ -113,7 +113,7 @@ public:
 
             if (!me->FindNearestCreature(112255, 100, true))
             {
-                me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE));
                 me->RemoveAurasDueToSpell(SPELL_DEATH_COSMETIC);
             }
             else
@@ -133,7 +133,7 @@ public:
             if (param == 1)
             {
                 events.ScheduleEvent(EVENT_PHASE_1_END, 5000);
-                me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE));
                 me->AI()->Talk(SAY_ACTIVATE);
                 me->RemoveAurasDueToSpell(SPELL_DEATH_COSMETIC);
             }
@@ -469,7 +469,7 @@ public:
                 }
                 case EVENT_ACTIVATE:
                 {
-                    me->RemoveUnitFlag(UNIT_FLAG_NOT_SELECTABLE);
+                    me->RemoveUnitFlag(UnitFlags(UNIT_FLAG_NOT_SELECTABLE));
                     me->RemoveAurasDueToSpell(SPELL_DEATH_STATE);
                     break;
                 }
@@ -512,9 +512,7 @@ public:
 
         bool Validate(SpellInfo const* /*spellInfo*/) override
         {
-            if (!sSpellMgr->GetSpellInfo(SPELL_ARCANE_SEEPAGE))
-                return false;
-            return true;
+            return ValidateSpellInfo({ SPELL_ARCANE_SEEPAGE });
         }
 
         void HandleEffectProc(AuraEffect const* /*aurEff*/, ProcEventInfo& /*eventInfo*/)
@@ -546,8 +544,8 @@ public:
 
         void OnUnitEnter(Unit* unit) override
         {
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_ARCANE_SEEPAGE_DMG);
             Unit* caster = at->GetCaster();
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_ARCANE_SEEPAGE_DMG, caster->GetMap()->GetDifficultyID());
             if (!caster || !unit || !spellInfo)
                 return;
 

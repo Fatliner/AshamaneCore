@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -20,22 +19,28 @@
 #include "Battleground.h"
 #include "Common.h"
 #include "Corpse.h"
+#include "GameTime.h"
 #include "Garrison.h"
 #include "InstancePackets.h"
 #include "InstanceSaveMgr.h"
 #include "Log.h"
 #include "MapManager.h"
+#include "MiscPackets.h"
 #include "MovementPackets.h"
 #include "ObjectMgr.h"
 #include "Opcodes.h"
 #include "Player.h"
 #include "SpellInfo.h"
+#include "MotionMaster.h"
+#include "MovementGenerator.h"
 #include "Transport.h"
 #include "Vehicle.h"
 #include "WaypointMovementGenerator.h"
 #include "SpellMgr.h"
 
-#define MOVEMENT_PACKET_TIME_DELAY 0
+#include <boost/accumulators/statistics/variance.hpp>
+#include <boost/accumulators/accumulators.hpp>
+#include <boost/accumulators/statistics.hpp>
 
 void WorldSession::HandleMoveWorldportAckOpcode(WorldPackets::Movement::WorldPortResponse& /*packet*/)
 {
@@ -155,8 +160,8 @@ void WorldSession::HandleMoveWorldportAck()
             if (!seamlessTeleport)
             {
                 // short preparations to continue flight
-                FlightPathMovementGenerator* flight = (FlightPathMovementGenerator*)(GetPlayer()->GetMotionMaster()->top());
-                flight->Initialize(GetPlayer());
+                MovementGenerator* movementGenerator = GetPlayer()->GetMotionMaster()->top();
+                movementGenerator->Initialize(GetPlayer());
             }
             return;
         }
@@ -186,7 +191,7 @@ void WorldSession::HandleMoveWorldportAck()
             {
                 if (time_t timeReset = sInstanceSaveMgr->GetResetTimeFor(mEntry->ID, diff))
                 {
-                    uint32 timeleft = uint32(timeReset - time(NULL));
+                    uint32 timeleft = uint32(timeReset - time(nullptr));
                     GetPlayer()->SendInstanceResetWarning(mEntry->ID, diff, timeleft, true);
                 }
             }
@@ -245,7 +250,7 @@ void WorldSession::HandleSuspendTokenResponse(WorldPackets::Movement::SuspendTok
 
     WorldPackets::Movement::NewWorld packet;
     packet.MapID = loc.GetMapId();
-    packet.Pos = loc;
+    packet.Loc.Pos = loc;
     packet.Reason = !_player->IsBeingTeleportedSeamlessly() ? NEW_WORLD_NORMAL : NEW_WORLD_SEAMLESS;
     SendPacket(packet.Write());
 
@@ -382,19 +387,27 @@ void WorldSession::HandleMovementOpcode(OpcodeClient opcode, MovementInfo& movem
     if (opcode == CMSG_MOVE_FALL_LAND && plrMover && !plrMover->IsInFlight())
         plrMover->HandleFall(movementInfo);
 
+    // interrupt parachutes upon falling or landing in water
+    if (opcode == CMSG_MOVE_FALL_LAND || opcode == CMSG_MOVE_START_SWIM)
+        mover->RemoveAurasWithInterruptFlags(AURA_INTERRUPT_FLAG_LANDING); // Parachutes
+
     if (plrMover && ((movementInfo.flags & MOVEMENTFLAG_SWIMMING) != 0) != plrMover->IsInWater())
     {
         // now client not include swimming flag in case jumping under water
         plrMover->SetInWater(!plrMover->IsInWater() || plrMover->GetMap()->IsUnderWater(plrMover->GetPhaseShift(), movementInfo.pos.GetPositionX(), movementInfo.pos.GetPositionY(), movementInfo.pos.GetPositionZ()));
     }
 
-    uint32 mstime = getMSTime();
-    /*----------------------*/
-    if (m_clientTimeDelay == 0)
-        m_clientTimeDelay = mstime - movementInfo.time;
-
     /* process position-change */
-    movementInfo.time = movementInfo.time + m_clientTimeDelay + MOVEMENT_PACKET_TIME_DELAY;
+    int64 movementTime = (int64)movementInfo.time + _timeSyncClockDelta;
+    if (_timeSyncClockDelta == 0 || movementTime < 0 || movementTime > 0xFFFFFFFF)
+    {
+        TC_LOG_WARN("misc", "The computed movement time using clockDelta is erronous. Using fallback instead");
+        movementInfo.time = GameTime::GetGameTimeMS();
+    }
+    else
+    {
+        movementInfo.time = (uint32)movementTime;
+    }
 
     movementInfo.guid = mover->GetGUID();
     mover->m_movementInfo = movementInfo;
@@ -441,7 +454,7 @@ void WorldSession::HandleMovementOpcode(OpcodeClient opcode, MovementInfo& movem
                 minHeight = -2000.0f;
                 break;
             default:
-                minHeight = plrMover->GetMap()->GetMinHeight(movementInfo.pos.GetPositionX(), movementInfo.pos.GetPositionY());
+                minHeight = plrMover->GetMap()->GetMinHeight(plrMover->GetPhaseShift(), movementInfo.pos.GetPositionX(), movementInfo.pos.GetPositionY());
                 break;
         }
 
@@ -587,8 +600,128 @@ void WorldSession::HandleSetCollisionHeightAck(WorldPackets::Movement::MoveSetCo
     GetPlayer()->ValidateMovementInfo(&setCollisionHeightAck.Data.Status);
 }
 
+void WorldSession::HandleMoveApplyMovementForceAck(WorldPackets::Movement::MoveApplyMovementForceAck& moveApplyMovementForceAck)
+{
+    Unit* mover = _player->m_unitMovedByMe;
+    ASSERT(mover != nullptr);
+    _player->ValidateMovementInfo(&moveApplyMovementForceAck.Ack.Status);
+
+    // prevent tampered movement data
+    if (moveApplyMovementForceAck.Ack.Status.guid != mover->GetGUID())
+    {
+        TC_LOG_ERROR("network", "HandleMoveApplyMovementForceAck: guid error, expected %s, got %s",
+            mover->GetGUID().ToString().c_str(), moveApplyMovementForceAck.Ack.Status.guid.ToString().c_str());
+        return;
+    }
+
+    //moveApplyMovementForceAck.Ack.Status.time += m_clientTimeDelay + MOVEMENT_PACKET_TIME_DELAY;
+
+    WorldPackets::Movement::MoveUpdateApplyMovementForce updateApplyMovementForce;
+    updateApplyMovementForce.Status = &moveApplyMovementForceAck.Ack.Status;
+    updateApplyMovementForce.Force = &moveApplyMovementForceAck.Force;
+    mover->SendMessageToSet(updateApplyMovementForce.Write(), false);
+}
+
+void WorldSession::HandleMoveRemoveMovementForceAck(WorldPackets::Movement::MoveRemoveMovementForceAck& moveRemoveMovementForceAck)
+{
+    Unit* mover = _player->m_unitMovedByMe;
+    ASSERT(mover != nullptr);
+    _player->ValidateMovementInfo(&moveRemoveMovementForceAck.Ack.Status);
+
+    // prevent tampered movement data
+    if (moveRemoveMovementForceAck.Ack.Status.guid != mover->GetGUID())
+    {
+        TC_LOG_ERROR("network", "HandleMoveRemoveMovementForceAck: guid error, expected %s, got %s",
+            mover->GetGUID().ToString().c_str(), moveRemoveMovementForceAck.Ack.Status.guid.ToString().c_str());
+        return;
+    }
+
+    //moveRemoveMovementForceAck.Ack.Status.time += m_clientTimeDelay + MOVEMENT_PACKET_TIME_DELAY;
+
+    WorldPackets::Movement::MoveUpdateRemoveMovementForce updateRemoveMovementForce;
+    updateRemoveMovementForce.Status = &moveRemoveMovementForceAck.Ack.Status;
+    updateRemoveMovementForce.TriggerGUID = moveRemoveMovementForceAck.ID;
+    mover->SendMessageToSet(updateRemoveMovementForce.Write(), false);
+}
+
+void WorldSession::HandleMoveSetModMovementForceMagnitudeAck(WorldPackets::Movement::MovementSpeedAck& setModMovementForceMagnitudeAck)
+{
+    Unit* mover = _player->m_unitMovedByMe;
+    ASSERT(mover != nullptr);                      // there must always be a mover
+    _player->ValidateMovementInfo(&setModMovementForceMagnitudeAck.Ack.Status);
+
+    // prevent tampered movement data
+    if (setModMovementForceMagnitudeAck.Ack.Status.guid != mover->GetGUID())
+    {
+        TC_LOG_ERROR("network", "HandleSetModMovementForceMagnitudeAck: guid error, expected %s, got %s",
+            mover->GetGUID().ToString().c_str(), setModMovementForceMagnitudeAck.Ack.Status.guid.ToString().c_str());
+        return;
+    }
+
+    // skip all except last
+    if (_player->m_movementForceModMagnitudeChanges > 0)
+    {
+        --_player->m_movementForceModMagnitudeChanges;
+        if (!_player->m_movementForceModMagnitudeChanges)
+        {
+            float expectedModMagnitude = 1.0f;
+            if (MovementForces const* movementForces = mover->GetMovementForces())
+                expectedModMagnitude = movementForces->GetModMagnitude();
+
+            if (std::fabs(expectedModMagnitude - setModMovementForceMagnitudeAck.Speed) > 0.01f)
+            {
+                TC_LOG_DEBUG("misc", "Player %s from account id %u kicked for incorrect movement force magnitude (must be %f instead %f)",
+                    _player->GetName().c_str(), _player->GetSession()->GetAccountId(), expectedModMagnitude, setModMovementForceMagnitudeAck.Speed);
+                _player->GetSession()->KickPlayer();
+                return;
+            }
+        }
+    }
+
+    //setModMovementForceMagnitudeAck.Ack.Status.time += m_clientTimeDelay + MOVEMENT_PACKET_TIME_DELAY;
+
+    WorldPackets::Movement::MoveUpdateSpeed updateModMovementForceMagnitude(SMSG_MOVE_UPDATE_MOD_MOVEMENT_FORCE_MAGNITUDE);
+    updateModMovementForceMagnitude.Status = &setModMovementForceMagnitudeAck.Ack.Status;
+    updateModMovementForceMagnitude.Speed = setModMovementForceMagnitudeAck.Speed;
+    mover->SendMessageToSet(updateModMovementForceMagnitude.Write(), false);
+}
+
 void WorldSession::HandleMoveTimeSkippedOpcode(WorldPackets::Movement::MoveTimeSkipped& /*moveTimeSkipped*/)
 {
+    // implementation of the technique described here: https://web.archive.org/web/20180430214420/http://www.mine-control.com/zack/timesync/timesync.html
+    // to reduce the skew induced by dropped TCP packets that get resent.
+
+    using namespace boost::accumulators;
+
+    accumulator_set<uint32, features<tag::mean, tag::median, tag::variance(lazy)> > latencyAccumulator;
+
+    for (auto pair : _timeSyncClockDeltaQueue)
+        latencyAccumulator(pair.second);
+
+    uint32 latencyMedian = static_cast<uint32>(std::round(median(latencyAccumulator)));
+    uint32 latencyStandardDeviation = static_cast<uint32>(std::round(sqrt(variance(latencyAccumulator))));
+
+    accumulator_set<int64, features<tag::mean> > clockDeltasAfterFiltering;
+    uint32 sampleSizeAfterFiltering = 0;
+    for (auto pair : _timeSyncClockDeltaQueue)
+    {
+        if (pair.second < latencyStandardDeviation + latencyMedian) {
+            clockDeltasAfterFiltering(pair.first);
+            sampleSizeAfterFiltering++;
+        }
+    }
+
+    if (sampleSizeAfterFiltering != 0)
+    {
+        int64 meanClockDelta = static_cast<int64>(std::round(mean(clockDeltasAfterFiltering)));
+        if (std::abs(meanClockDelta - _timeSyncClockDelta) > 25)
+            _timeSyncClockDelta = meanClockDelta;
+    }
+    else if (_timeSyncClockDelta == 0)
+    {
+        std::pair<int64, uint32> back = _timeSyncClockDeltaQueue.back();
+        _timeSyncClockDelta = back.first;
+    }
 }
 
 void WorldSession::HandleMoveSplineDoneOpcode(WorldPackets::Movement::MoveSplineDone& moveSplineDone)

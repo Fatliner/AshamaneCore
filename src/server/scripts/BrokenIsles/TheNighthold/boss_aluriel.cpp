@@ -95,11 +95,13 @@ public:
 
         void StartMovePath()
         {
+            Movement::PointsArray path(WaypointAlurielAnomaly, WaypointAlurielAnomaly + WaypointAlurielAnomalySize);
+
             Movement::MoveSplineInit init(me);
             init.SetCyclic();
             init.SetSmooth();
             init.SetVelocity(4.0f);
-            init.MovebyPath(WaypointAlurielAnomaly, 0);
+            init.MovebyPath(path, 0);
             init.Launch();
         }
 
@@ -326,9 +328,7 @@ public:
 
         bool Validate(SpellInfo const* /*spellInfo*/) override
         {
-            if (!sSpellMgr->GetSpellInfo(SPELL_MARK_OF_FROST))
-                return false;
-            return true;
+            return ValidateSpellInfo({ SPELL_MARK_OF_FROST });
         }
 
         void Tick(AuraEffect const* aurEff)
@@ -488,8 +488,8 @@ public:
 
         void OnUnitEnter(Unit* unit) override
         {
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_POOL_OF_FROST);
             Unit* caster = at->GetCaster();
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_POOL_OF_FROST, caster->GetMap()->GetDifficultyID());
             if (!caster || !unit || !spellInfo)
                 return;
 

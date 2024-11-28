@@ -152,7 +152,7 @@ struct boss_kurtalos_ravencrest : public BossAI
         {
             case SPELL_WHIRLING_BLADE:
             {
-                if (Unit* target = SelectTarget(SELECT_TARGET_FARTHEST, 0, 0.f, true))
+                if (Unit* target = SelectTarget(SELECT_TARGET_MAXDISTANCE, 0, 0.f, true))
                     if (Creature* whirlingBlade = me->SummonCreature(NPC_WHIRLING_BLADE, me->GetPosition()))
                         whirlingBlade->AI()->SetGUID(target->GetGUID());
 
@@ -195,14 +195,13 @@ struct npc_kurtalos_whirling_blade : public ScriptedAI
         }
 
         me->GetMotionMaster()->Clear();
-        path.nodes.clear();
 
-        path.nodes.push_back(WaypointNode(1, me->GetPositionX(), me->GetPositionY(), me->GetPositionZ(), me->GetOrientation()));
-        path.nodes.push_back(WaypointNode(2, target->GetPositionX(), target->GetPositionY(), target->GetPositionZ(), target->GetOrientation()));
-        me->GetMotionMaster()->MovePath(path, true);
+        path[0] = me->GetPosition();
+        path[1] = target->GetPosition();
+        me->GetMotionMaster()->MoveSmoothPath(0, path, 2, false, true);
     }
 private:
-    WaypointPath path;
+    Position path[2];
 };
 
 // Spell 198782
@@ -358,7 +357,7 @@ struct npc_latosius : public ScriptedAI
                 events.DelayEvents(25s); // 5s spell cast + 17s event + 2s security
                 break;
             case SPELL_STINGING_SWARM:
-                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.f, true, -SPELL_STINGING_SWARM))
+                if (Unit* target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0.f, true, true, -SPELL_STINGING_SWARM))
                     me->SummonCreature(NPC_STINGING_SWARM, *target, TEMPSUMMON_CORPSE_DESPAWN);
                 events.Repeat(15s);
                 break;

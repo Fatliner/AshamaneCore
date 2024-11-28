@@ -1,3 +1,20 @@
+/*
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 #include "ScriptMgr.h"
 #include "ScriptedCreature.h"
 #include "AreaTrigger.h"
@@ -27,7 +44,7 @@ enum Spells
     SPELL_NETHER_LINK       = 196804,
     SPELL_NETHER_LINK_VISUAL= 196805,
     SPELL_NETHER_LINK_AREA  = 196806,
-    SPELL_NETHER_LINK_DMG   = 196824, 
+    SPELL_NETHER_LINK_DMG   = 196824,
 };
 
 enum Events
@@ -112,11 +129,11 @@ class boss_ivanyr : public CreatureScript
                     case DATA_NETHER_LINK_VERTEX_ONE:
                         _vertexsGuid.at(0) = guid;
                         break;
-                    
+
                     case DATA_NETHER_LINK_VERTEX_TWO:
                         _vertexsGuid.at(1) = guid;
                         break;
-                    
+
                     case DATA_NETHER_LINK_VERTEX_THREE:
                         _vertexsGuid.at(2) = guid;
                         break;
@@ -129,11 +146,11 @@ class boss_ivanyr : public CreatureScript
                 {
                     case DATA_NETHER_LINK_VERTEX_ONE:
                         return _vertexsGuid.at(0);
-                    
+
                     case DATA_NETHER_LINK_VERTEX_TWO:
                         return _vertexsGuid.at(1);
                         break;
-                    
+
                     case DATA_NETHER_LINK_VERTEX_THREE:
                         return _vertexsGuid.at(2);
 
@@ -151,7 +168,7 @@ class boss_ivanyr : public CreatureScript
                     crystal->RemoveAllAuras();
                     crystal->RemoveAllAreaTriggers();
                 }
-                
+
                 Talk(SAY_DEATH);
                 _JustDied();
             }
@@ -168,7 +185,7 @@ class boss_ivanyr : public CreatureScript
                 {
                     Talk(SAY_OVERCHARGUE);
                     Creature* crystal = me->FindNearestCreature(NPC_NIGHT_CRYSTAL, 500.f);
-                    
+
                     if (crystal)
                     {
                         me->SetFacingToObject(crystal);
@@ -195,7 +212,7 @@ class boss_ivanyr : public CreatureScript
 
                     if (!targetOne || !targetTwo || !targetThree)
                         return;
-                    
+
                     G3D::Vector2 v1 = { targetOne->GetPositionX(),  targetOne->GetPositionY()};
                     G3D::Vector2 v2 = { targetTwo->GetPositionX(),  targetTwo->GetPositionY()};
                     G3D::Vector2 v3 = { targetThree->GetPositionX(), targetThree->GetPositionY()};
@@ -224,7 +241,7 @@ class boss_ivanyr : public CreatureScript
             {
                 if (!spell)
                     return;
-                
+
                 if (spell->HasEffect(SPELL_EFFECT_INTERRUPT_CAST))
                 {
                     Spell* currSpell = me->GetCurrentSpell(CURRENT_CHANNELED_SPELL);
@@ -285,7 +302,7 @@ class boss_ivanyr : public CreatureScript
                         events.ScheduleEvent(EVENT_VOLATILE_MAGIC, Seconds(30));
                         break;
                     }
-                    
+
                 }
             }
 
@@ -322,7 +339,7 @@ class spell_ivanyr_nether_link : public SpellScriptLoader
                 {
                     std::list<ObjectGuid> _guids;
                     std::list<Player*> players;
-                    
+
                     GetCaster()->GetPlayerListInGrid(players, 250.f);
 
                     if (!players.empty())
@@ -340,10 +357,10 @@ class spell_ivanyr_nether_link : public SpellScriptLoader
                     for (auto & it : _guids)
                     {
                         Player* ptr = ObjectAccessor::GetPlayer(*GetCaster(), it);
-                        
+
                         if (!ptr)
                             continue;
-                            
+
                         GetCaster()->AddAura(SPELL_NETHER_LINK_VISUAL, ptr);
                         G3D::Vector3 pos = { ptr->GetPositionX(), ptr->GetPositionY(), ptr->GetPositionZ() };
                         //ptr->SendPlaySpellVisual(pos, 39597, 0, 0, 34, false);
@@ -353,11 +370,11 @@ class spell_ivanyr_nether_link : public SpellScriptLoader
                             case 0:
                                 GetCaster()->GetAI()->SetGUID(ptr->GetGUID(), DATA_NETHER_LINK_VERTEX_ONE);
                                 break;
-                            
+
                             case 1:
                                 GetCaster()->GetAI()->SetGUID(ptr->GetGUID(), DATA_NETHER_LINK_VERTEX_TWO);
                                 break;
-                            
+
                             case 2:
                                 GetCaster()->GetAI()->SetGUID(ptr->GetGUID(), DATA_NETHER_LINK_VERTEX_THREE);
                                 break;
@@ -391,7 +408,7 @@ class spell_ivanyr_nether_link_dmg : public SpellScriptLoader
     public:
         spell_ivanyr_nether_link_dmg() : SpellScriptLoader("spell_ivanyr_nether_link_dmg")
         {}
-        
+
         class spell_nether_link_dmg_AuraScript : public AuraScript
         {
             public:
@@ -537,10 +554,10 @@ class at_arc_charged_bolt : public AreaTriggerEntityScript
             {
                 if (!target)
                     return;
-                
+
                 if (target->GetTypeId() != TYPEID_PLAYER)
                     return;
-                
+
                 target->CastSpell(target, SPELL_CHARGED_BOLT_DMG, true);
             }
 
@@ -548,10 +565,10 @@ class at_arc_charged_bolt : public AreaTriggerEntityScript
             {
                 if (!target)
                     return;
-                
+
                 if (target->GetTypeId() != TYPEID_PLAYER)
                     return;
-                
+
                 target->RemoveAurasDueToSpell(SPELL_CHARGED_BOLT_DMG);
             }
         };

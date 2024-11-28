@@ -113,7 +113,7 @@ public:
             }
         }
 
-        bool IsEncounterInProgress() const override 
+        bool IsEncounterInProgress() const override
         {
             for (uint8 i = 0; i < ENCOUNTERS; ++i)
             {
@@ -304,17 +304,12 @@ public:
                         case DONE:
                             DoRespawnGameObject(HeartOfWindGUID, 7*DAY);
 
-                            Map::PlayerList const &players = instance->GetPlayers();
-                            if (players.isEmpty())
-                                break;
-                            for (Map::PlayerList::const_iterator i = players.begin(); i != players.end(); ++i)
+                            DoOnPlayers([](Player* player)
                             {
-                                if (Player* player = i->GetSource())
-                                {
-                                    player->GetAchievementMgr()->UpdateCriteria(CRITERIA_TYPE_KILL_CREATURE, 46753, 1);
-                                    player->ModifyCurrency(396, 70 * CURRENCY_PRECISION);
-                                }
-                            }
+                                player->GetAchievementMgr()->UpdateCriteria(CRITERIA_TYPE_KILL_CREATURE, 46753, 1);
+                                player->ModifyCurrency(396, 70 * CURRENCY_PRECISION);
+                            });
+
                             break;
                     }
                     Encounter[1] = data;
@@ -397,7 +392,7 @@ public:
             return true;
         }
 
-        uint32 GetData(uint32 type) const override 
+        uint32 GetData(uint32 type) const override
         {
             switch (type)
             {
@@ -418,6 +413,7 @@ public:
         bool CheckAchivementStayChill()
         {
             uint32 spellid = GetSpellWindChill();
+
             Map::PlayerList const& players = instance->GetPlayers();
             if (!players.isEmpty())
             {

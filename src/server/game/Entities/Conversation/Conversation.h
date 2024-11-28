@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -27,23 +27,20 @@ class SpellInfo;
 
 #define CONVERSATION_RELOCATE_TICK 1000
 
-namespace UF
-{
-    inline bool operator==(ConversationLine const& left, ConversationLine const& right)
-    {
-        return left.ConversationLineID == right.ConversationLineID;
-    }
-}
-
 class TC_GAME_API Conversation : public WorldObject, public GridObject<Conversation>
 {
     public:
         Conversation();
         ~Conversation();
 
+    protected:
         void BuildValuesCreate(ByteBuffer* data, Player const* target) const override;
         void BuildValuesUpdate(ByteBuffer* data, Player const* target) const override;
         void ClearUpdateMask(bool remove) override;
+
+    public:
+        void BuildValuesUpdateForPlayerWithMask(UpdateData* data, UF::ObjectData::Mask const& requestedObjectMask,
+            UF::ConversationData::Mask const& requestedConversationMask, Player const* target) const;
 
         void AddToWorld() override;
         void RemoveFromWorld() override;
@@ -57,7 +54,7 @@ class TC_GAME_API Conversation : public WorldObject, public GridObject<Conversat
 
         static Conversation* CreateConversation(uint32 conversationEntry, Unit* creator, Position const& pos, GuidUnorderedSet&& participants, SpellInfo const* spellInfo = nullptr);
         bool Create(ObjectGuid::LowType lowGuid, uint32 conversationEntry, Map* map, Unit* creator, Position const& pos, GuidUnorderedSet&& participants, SpellInfo const* spellInfo = nullptr);
-        void AddActor(ObjectGuid const& actorGuid, uint16 actorIdx, uint32 padding = 0);
+        void AddActor(ObjectGuid const& actorGuid, uint16 actorIdx);
         void AddParticipant(ObjectGuid const& participantGuid);
 
         ObjectGuid const& GetCreatorGuid() const { return _creatorGuid; }

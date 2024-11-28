@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
- * Copyright (C) 2005-2009 MaNGOS <http://getmangos.com/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -23,9 +22,11 @@
 #include "DB2Stores.h"
 #include "GameEventMgr.h"
 #include "GameObject.h"
+#include "GameTime.h"
 #include "Group.h"
 #include "InstanceScript.h"
 #include "Item.h"
+#include "LFGMgr.h"
 #include "Log.h"
 #include "LootMgr.h"
 #include "Map.h"
@@ -33,12 +34,16 @@
 #include "PhasingHandler.h"
 #include "Player.h"
 #include "Pet.h"
+#include "RaceMask.h"
+#include "Realm.h"
 #include "ReputationMgr.h"
 #include "ScriptMgr.h"
 #include "SpellAuras.h"
 #include "SpellMgr.h"
 #include "World.h"
 #include "WorldSession.h"
+#include <random>
+#include <sstream>
 
 char const* const ConditionMgr::StaticSourceTypeData[CONDITION_SOURCE_TYPE_MAX] =
 {
@@ -202,7 +207,7 @@ bool Condition::Meets(ConditionSourceInfo& sourceInfo) const
         case CONDITION_RACE:
         {
             if (Unit* unit = object->ToUnit())
-                condMeets = (unit->getRaceMask() & ConditionValue1) != 0;
+                condMeets = Trinity::RaceMask<uint32>{ ConditionValue1 }.HasRace(unit->getRace());
             break;
         }
         case CONDITION_GENDER:
@@ -1113,7 +1118,7 @@ void ConditionMgr::LoadConditions(bool isReload)
             }
             cond->ReferenceId = uint32(abs(iConditionTypeOrReference));
 
-            const char* rowType = "reference template";
+            char const* rowType = "reference template";
             if (iSourceTypeOrReferenceId >= 0)
                 rowType = "reference";
             //check for useless data
@@ -1348,105 +1353,110 @@ bool ConditionMgr::addToGossipMenuItems(Condition* cond) const
 
 bool ConditionMgr::addToSpellImplicitTargetConditions(Condition* cond) const
 {
-    uint32 conditionEffMask = cond->SourceGroup;
-    SpellInfo* spellInfo = const_cast<SpellInfo*>(sSpellMgr->AssertSpellInfo(cond->SourceEntry));
-    std::list<uint32> sharedMasks;
-    for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
+    bool valid = false;
+    sSpellMgr->ForEachSpellInfoDifficulty(cond->SourceEntry, [&](SpellInfo const* spellInfo)
     {
-        SpellEffectInfo const* effect = spellInfo->GetEffect(DIFFICULTY_NONE, i);
-        if (!effect)
-            continue;
-
-        // check if effect is already a part of some shared mask
-        bool found = false;
-        for (std::list<uint32>::iterator itr = sharedMasks.begin(); itr != sharedMasks.end(); ++itr)
+        uint32 conditionEffMask = cond->SourceGroup;
+        std::list<uint32> sharedMasks;
+        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
         {
-            if ((1 << i) & *itr)
-            {
-                found = true;
-                break;
-            }
-        }
-
-        if (found)
-            continue;
-
-        // build new shared mask with found effect
-        uint32 sharedMask = 1 << i;
-        ConditionContainer* cmp = effect->ImplicitTargetConditions;
-        for (uint8 effIndex = i + 1; effIndex < MAX_SPELL_EFFECTS; ++effIndex)
-        {
-            SpellEffectInfo const* inner = spellInfo->GetEffect(DIFFICULTY_NONE, effIndex);
-            if (!inner)
-                continue;
-
-            if (inner->ImplicitTargetConditions == cmp)
-                sharedMask |= 1 << effIndex;
-        }
-
-        sharedMasks.push_back(sharedMask);
-    }
-
-    for (std::list<uint32>::iterator itr = sharedMasks.begin(); itr != sharedMasks.end(); ++itr)
-    {
-        // some effect indexes should have same data
-        if (uint32 commonMask = *itr & conditionEffMask)
-        {
-            uint8 firstEffIndex = 0;
-            for (; firstEffIndex < MAX_SPELL_EFFECTS; ++firstEffIndex)
-                if ((1<<firstEffIndex) & *itr)
-                    break;
-
-            if (firstEffIndex >= MAX_SPELL_EFFECTS)
-                return false;
-
-            SpellEffectInfo const* effect = spellInfo->GetEffect(DIFFICULTY_NONE, firstEffIndex);
+            SpellEffectInfo const* effect = spellInfo->GetEffect(i);
             if (!effect)
                 continue;
 
-            // get shared data
-            ConditionContainer* sharedList = effect->ImplicitTargetConditions;
-
-            // there's already data entry for that sharedMask
-            if (sharedList)
+            // check if effect is already a part of some shared mask
+            bool found = false;
+            for (std::list<uint32>::iterator itr = sharedMasks.begin(); itr != sharedMasks.end(); ++itr)
             {
-                // we have overlapping masks in db
-                if (conditionEffMask != *itr)
+                if ((1 << i) & *itr)
                 {
-                    TC_LOG_ERROR("sql.sql", "%s in `condition` table, has incorrect SourceGroup %u (spell effectMask) set - "
-                        "effect masks are overlapping (all SourceGroup values having given bit set must be equal) - ignoring.", cond->ToString().c_str(), cond->SourceGroup);
-                    return false;
-                }
-            }
-            // no data for shared mask, we can create new submask
-            else
-            {
-                // add new list, create new shared mask
-                sharedList = new ConditionContainer();
-                bool assigned = false;
-                for (uint8 i = firstEffIndex; i < MAX_SPELL_EFFECTS; ++i)
-                {
-                    SpellEffectInfo const* eff = spellInfo->GetEffect(DIFFICULTY_NONE, i);
-                    if (!eff)
-                        continue;
-
-                    if ((1 << i) & commonMask)
-                    {
-                        const_cast<SpellEffectInfo*>(eff)->ImplicitTargetConditions = sharedList;
-                        assigned = true;
-                    }
-                }
-
-                if (!assigned)
-                {
-                    delete sharedList;
+                    found = true;
                     break;
                 }
             }
-            sharedList->push_back(cond);
-            break;
+
+            if (found)
+                continue;
+
+            // build new shared mask with found effect
+            uint32 sharedMask = 1 << i;
+            ConditionContainer* cmp = effect->ImplicitTargetConditions;
+            for (uint8 effIndex = i + 1; effIndex < MAX_SPELL_EFFECTS; ++effIndex)
+            {
+                SpellEffectInfo const* inner = spellInfo->GetEffect(effIndex);
+                if (!inner)
+                    continue;
+
+                if (inner->ImplicitTargetConditions == cmp)
+                    sharedMask |= 1 << effIndex;
+            }
+
+            sharedMasks.push_back(sharedMask);
         }
-    }
+
+        for (std::list<uint32>::iterator itr = sharedMasks.begin(); itr != sharedMasks.end(); ++itr)
+        {
+            // some effect indexes should have same data
+            if (uint32 commonMask = *itr & conditionEffMask)
+            {
+                uint8 firstEffIndex = 0;
+                for (; firstEffIndex < MAX_SPELL_EFFECTS; ++firstEffIndex)
+                    if ((1 << firstEffIndex) & *itr)
+                        break;
+
+                if (firstEffIndex >= MAX_SPELL_EFFECTS)
+                    return;
+
+                SpellEffectInfo const* effect = spellInfo->GetEffect(firstEffIndex);
+                if (!effect)
+                    continue;
+
+                // get shared data
+                ConditionContainer* sharedList = effect->ImplicitTargetConditions;
+
+                // there's already data entry for that sharedMask
+                if (sharedList)
+                {
+                    // we have overlapping masks in db
+                    if (conditionEffMask != *itr)
+                    {
+                        TC_LOG_ERROR("sql.sql", "%s in `condition` table, has incorrect SourceGroup %u (spell effectMask) set - "
+                            "effect masks are overlapping (all SourceGroup values having given bit set must be equal) - ignoring (Difficulty %u).",
+                            cond->ToString().c_str(), cond->SourceGroup, uint32(spellInfo->Difficulty));
+                        return;
+                    }
+                }
+                // no data for shared mask, we can create new submask
+                else
+                {
+                    // add new list, create new shared mask
+                    sharedList = new ConditionContainer();
+                    bool assigned = false;
+                    for (uint8 i = firstEffIndex; i < MAX_SPELL_EFFECTS; ++i)
+                    {
+                        SpellEffectInfo const* eff = spellInfo->GetEffect(i);
+                        if (!eff)
+                            continue;
+
+                        if ((1 << i) & commonMask)
+                        {
+                            const_cast<SpellEffectInfo*>(eff)->ImplicitTargetConditions = sharedList;
+                            assigned = true;
+                        }
+                    }
+
+                    if (!assigned)
+                    {
+                        delete sharedList;
+                        break;
+                    }
+                }
+                sharedList->push_back(cond);
+                break;
+            }
+        }
+        valid = true;
+    });
     return true;
 }
 
@@ -1508,7 +1518,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1525,7 +1535,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1542,7 +1552,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1559,7 +1569,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1576,7 +1586,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1593,7 +1603,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1610,7 +1620,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1627,7 +1637,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1644,7 +1654,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1661,7 +1671,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1695,7 +1705,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1712,14 +1722,14 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* pItemProto = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!pItemProto && !loot->isReference(cond->SourceEntry))
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceType, SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
         }
         case CONDITION_SOURCE_TYPE_SPELL_IMPLICIT_TARGET:
         {
-            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(cond->SourceEntry);
+            SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(cond->SourceEntry, DIFFICULTY_NONE);
             if (!spellInfo)
             {
                 TC_LOG_ERROR("sql.sql", "%s SourceEntry in `condition` table does not exist in `spell.dbc`, ignoring.", cond->ToString().c_str());
@@ -1739,7 +1749,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
                 if (!((1 << i) & cond->SourceGroup))
                     continue;
 
-                SpellEffectInfo const* effect = spellInfo->GetEffect(DIFFICULTY_NONE, i);
+                SpellEffectInfo const* effect = spellInfo->GetEffect(i);
                 if (!effect)
                     continue;
 
@@ -1788,7 +1798,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
         case CONDITION_SOURCE_TYPE_SPELL:
         case CONDITION_SOURCE_TYPE_SPELL_PROC:
         {
-            SpellInfo const* spellProto = sSpellMgr->GetSpellInfo(cond->SourceEntry);
+            SpellInfo const* spellProto = sSpellMgr->GetSpellInfo(cond->SourceEntry, DIFFICULTY_NONE);
             if (!spellProto)
             {
                 TC_LOG_ERROR("sql.sql", "%s SourceEntry in `condition` table does not exist in `spell.dbc`, ignoring.", cond->ToString().c_str());
@@ -1810,7 +1820,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
                 return false;
             }
 
-            if (!sSpellMgr->GetSpellInfo(cond->SourceEntry))
+            if (!sSpellMgr->GetSpellInfo(cond->SourceEntry, DIFFICULTY_NONE))
             {
                 TC_LOG_ERROR("sql.sql", "%s SourceEntry in `condition` table does not exist in `spell.dbc`, ignoring.", cond->ToString().c_str());
                 return false;
@@ -1823,7 +1833,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
                 return false;
             }
 
-            if (!sSpellMgr->GetSpellInfo(cond->SourceEntry))
+            if (!sSpellMgr->GetSpellInfo(cond->SourceEntry, DIFFICULTY_NONE))
             {
                 TC_LOG_ERROR("sql.sql", "%s SourceEntry in `condition` table does not exist in `spell.dbc`, ignoring.", cond->ToString().c_str());
                 return false;
@@ -1839,7 +1849,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
             ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate(cond->SourceEntry);
             if (!itemTemplate)
             {
-                TC_LOG_ERROR("sql.sql", "%s SourceEntry in `condition` table, does not exist in `item_template`, ignoring.", cond->ToString().c_str());
+                TC_LOG_ERROR("sql.sql", "%s SourceEntry in `condition` table, item does not exist, ignoring.", cond->ToString().c_str());
                 return false;
             }
             break;
@@ -1867,7 +1877,7 @@ bool ConditionMgr::isSourceTypeValid(Condition* cond) const
         case CONDITION_SOURCE_TYPE_SMART_EVENT:
             break;
         case CONDITION_SOURCE_TYPE_GRAVEYARD:
-            if (!sWorldSafeLocsStore.LookupEntry(cond->SourceEntry))
+            if (!sObjectMgr->GetWorldSafeLoc(cond->SourceEntry))
             {
                 TC_LOG_ERROR("sql.sql", "%s SourceEntry in `condition` table, does not exist in WorldSafeLocs.db2, ignoring.", cond->ToString().c_str());
                 return false;
@@ -1887,7 +1897,7 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
     {
         case CONDITION_AURA:
         {
-            if (!sSpellMgr->GetSpellInfo(cond->ConditionValue1))
+            if (!sSpellMgr->GetSpellInfo(cond->ConditionValue1, DIFFICULTY_NONE))
             {
                 TC_LOG_ERROR("sql.sql", "%s has non existing spell (Id: %d), skipped.", cond->ToString(true).c_str(), cond->ConditionValue1);
                 return false;
@@ -1983,7 +1993,7 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
                 TC_LOG_ERROR("sql.sql", "%s has invalid state mask (%u), skipped.", cond->ToString(true).c_str(), cond->ConditionValue2);
                 return false;
             }
-            // intentional missing break
+            /* fallthrough */
         case CONDITION_QUESTREWARDED:
         case CONDITION_QUESTTAKEN:
         case CONDITION_QUEST_NONE:
@@ -2028,7 +2038,7 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
         }
         case CONDITION_RACE:
         {
-            if (cond->ConditionValue1 & ~RACEMASK_ALL_PLAYABLE)
+            if (uint32(cond->ConditionValue1 & ~RACEMASK_ALL_PLAYABLE)) // uint32 works thanks to weird index remapping in racemask
             {
                 TC_LOG_ERROR("sql.sql", "%s has non existing racemask (" UI64FMTD "), skipped.", cond->ToString(true).c_str(), cond->ConditionValue1 & ~RACEMASK_ALL_PLAYABLE);
                 return false;
@@ -2056,7 +2066,7 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
         }
         case CONDITION_SPELL:
         {
-            if (!sSpellMgr->GetSpellInfo(cond->ConditionValue1))
+            if (!sSpellMgr->GetSpellInfo(cond->ConditionValue1, DIFFICULTY_NONE))
             {
                 TC_LOG_ERROR("sql.sql", "%s has non existing spell (Id: %d), skipped", cond->ToString(true).c_str(), cond->ConditionValue1);
                 return false;
@@ -2138,7 +2148,7 @@ bool ConditionMgr::isConditionTypeValid(Condition* cond) const
                     }
                     if (cond->ConditionValue3)
                     {
-                        if (GameObjectData const* goData = sObjectMgr->GetGOData(cond->ConditionValue3))
+                        if (GameObjectData const* goData = sObjectMgr->GetGameObjectData(cond->ConditionValue3))
                         {
                             if (cond->ConditionValue2 && goData->id != cond->ConditionValue2)
                             {
@@ -2502,15 +2512,79 @@ inline bool PlayerConditionLogic(uint32 logic, std::array<bool, N>& results)
     return result;
 }
 
+uint32 ConditionMgr::GetPlayerConditionLfgValue(Player const* player, PlayerConditionLfgStatus status)
+{
+    Group const* group = player->GetGroup();
+    if (!group)
+        return 0;
+
+    switch (status)
+    {
+        case PlayerConditionLfgStatus::InLFGDungeon:
+            return sLFGMgr->inLfgDungeonMap(player->GetGUID(), player->GetMapId(), player->GetMap()->GetDifficultyID()) ? 1 : 0;
+        case PlayerConditionLfgStatus::InLFGRandomDungeon:
+            return sLFGMgr->inLfgDungeonMap(player->GetGUID(), player->GetMapId(), player->GetMap()->GetDifficultyID()) &&
+                sLFGMgr->selectedRandomLfgDungeon(player->GetGUID()) ? 1 : 0;
+        case PlayerConditionLfgStatus::InLFGFirstRandomDungeon:
+        {
+            if (!sLFGMgr->inLfgDungeonMap(player->GetGUID(), player->GetMapId(), player->GetMap()->GetDifficultyID()))
+                return 0;
+
+            uint32 selectedRandomDungeon = sLFGMgr->GetSelectedRandomDungeon(player->GetGUID());
+            if (!selectedRandomDungeon)
+                return 0;
+
+            if (lfg::LfgReward const* reward = sLFGMgr->GetRandomDungeonReward(selectedRandomDungeon, player->getLevel()))
+                if (Quest const* quest = sObjectMgr->GetQuestTemplate(reward->firstQuest))
+                    if (player->CanRewardQuest(quest, false))
+                        return 1;
+            return 0;
+        }
+        case PlayerConditionLfgStatus::PartialClear:
+            break;
+        case PlayerConditionLfgStatus::StrangerCount:
+            break;
+        case PlayerConditionLfgStatus::VoteKickCount:
+            break;
+        case PlayerConditionLfgStatus::BootCount:
+            break;
+        case PlayerConditionLfgStatus::GearDiff:
+            break;
+        default:
+            break;
+    }
+
+    return 0;
+}
+
 bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditionEntry const* condition)
 {
-    if (condition->MinLevel && player->getLevel() < condition->MinLevel)
-        return false;
+    if (Optional<ContentTuningLevels> levels = sDB2Manager.GetContentTuningData(condition->ContentTuningID, player->m_playerData->CtrOptions->ContentTuningConditionMask))
+    {
+        uint8 minLevel = condition->Flags & 0x800 ? levels->MinLevelWithDelta : levels->MinLevel;
+        uint8 maxLevel = 0;
+        if (!(condition->Flags & 0x20))
+            maxLevel = condition->Flags & 0x800 ? levels->MaxLevelWithDelta : levels->MaxLevel;
 
-    if (condition->MaxLevel && player->getLevel() > condition->MaxLevel)
-        return false;
+        if (condition->Flags & 0x80)
+        {
+            if (minLevel && player->getLevel() >= minLevel && (!maxLevel || player->getLevel() <= maxLevel))
+                return false;
 
-    if (condition->RaceMask && !(player->getRaceMask() & condition->RaceMask))
+            if (maxLevel && player->getLevel() <= maxLevel && (!minLevel || player->getLevel() >= minLevel))
+                return false;
+        }
+        else
+        {
+            if (minLevel && player->getLevel() < minLevel)
+                return false;
+
+            if (maxLevel && player->getLevel() > maxLevel)
+                return false;
+        }
+    }
+
+    if (condition->RaceMask && !condition->RaceMask.HasRace(player->getRace()))
         return false;
 
     if (condition->ClassMask && !(player->getClassMask() & condition->ClassMask))
@@ -2519,7 +2593,7 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
     if (condition->Gender >= 0 && player->getGender() != condition->Gender)
         return false;
 
-    if (condition->NativeGender >= 0 && player->m_playerData->NativeSex != condition->NativeGender)
+    if (condition->NativeGender >= 0 && player->GetNativeSex() != condition->NativeGender)
         return false;
 
     if (condition->PowerType != -1 && condition->PowerTypeComp)
@@ -2783,7 +2857,17 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
     }
 
     // TODO: time condition
-    // TODO (or not): world state expression condition
+
+    if (condition->WorldStateExpressionID)
+    {
+        WorldStateExpressionEntry const* worldStateExpression = sWorldStateExpressionStore.LookupEntry(condition->WorldStateExpressionID);
+        if (!worldStateExpression)
+            return false;
+
+        if (!IsPlayerMeetingExpression(player, worldStateExpression))
+            return false;
+    }
+
     // TODO: weather condition
 
     if (condition->Achievement[0])
@@ -2806,7 +2890,21 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
             return false;
     }
 
-    // TODO: research lfg status for player conditions
+    if (condition->LfgStatus[0])
+    {
+        using LfgCount = std::extent<decltype(condition->LfgStatus)>;
+
+        std::array<bool, LfgCount::value> results;
+        results.fill(true);
+        for (std::size_t i = 0; i < LfgCount::value; ++i)
+            if (condition->LfgStatus[i])
+                results[i] = PlayerConditionCompare(condition->LfgCompare[i],
+                    GetPlayerConditionLfgValue(player, PlayerConditionLfgStatus(condition->LfgStatus[i])),
+                    condition->LfgValue[i]);
+
+        if (!PlayerConditionLogic(condition->LfgLogic, results))
+            return false;
+    }
 
     if (condition->AreaID[0])
     {
@@ -2879,5 +2977,385 @@ bool ConditionMgr::IsPlayerMeetingCondition(Player const* player, PlayerConditio
     if (condition->ModifierTreeID && !player->ModifierTreeSatisfied(condition->ModifierTreeID))
         return false;
 
+    if (condition->CovenantID && player->m_playerData->CovenantID != condition->CovenantID)
+        return false;
+
     return true;
+}
+
+ByteBuffer HexToBytes(const std::string& hex)
+{
+    ByteBuffer buffer(hex.length() / 2, ByteBuffer::Resize{});
+    HexStrToByteArray(hex, buffer.contents());
+    return buffer;
+}
+
+static int32(* const WorldStateExpressionFunctions[WSE_FUNCTION_MAX])(Player const*, uint32, uint32) =
+{
+    // WSE_FUNCTION_NONE
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_RANDOM
+    [](Player const* /*player*/, uint32 arg1, uint32 arg2) -> int32
+    {
+        return irand(std::min(arg1, arg2), std::max(arg1, arg2));
+    },
+
+    // WSE_FUNCTION_MONTH
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return GameTime::GetDateAndTime()->tm_mon + 1;
+    },
+
+    // WSE_FUNCTION_DAY
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return GameTime::GetDateAndTime()->tm_mday + 1;
+    },
+
+    // WSE_FUNCTION_TIME_OF_DAY
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        tm const* localTime = GameTime::GetDateAndTime();
+        return localTime->tm_hour * MINUTE + localTime->tm_min;
+    },
+
+    // WSE_FUNCTION_REGION
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return realm.Id.Region;
+    },
+
+    // WSE_FUNCTION_CLOCK_HOUR
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        uint32 currentHour = GameTime::GetDateAndTime()->tm_hour + 1;
+        return currentHour <= 12 ? (currentHour ? currentHour : 12) : currentHour - 12;
+    },
+
+    // WSE_FUNCTION_OLD_DIFFICULTY_ID
+    [](Player const* player, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        if (DifficultyEntry const* difficulty = sDifficultyStore.LookupEntry(player->GetMap()->GetDifficultyID()))
+            return difficulty->OldEnumValue;
+
+        return -1;
+    },
+
+    // WSE_FUNCTION_HOLIDAY_START
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_HOLIDAY_LEFT
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_HOLIDAY_ACTIVE
+    [](Player const* /*player*/, uint32 arg1, uint32 /*arg2*/) -> int32
+    {
+        return int32(IsHolidayActive(HolidayIds(arg1)));
+    },
+
+    // WSE_FUNCTION_TIMER_CURRENT_TIME
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return GameTime::GetGameTime();
+    },
+
+    // WSE_FUNCTION_WEEK_NUMBER
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        time_t now = GameTime::GetGameTime();
+        uint32 raidOrigin = 1135695600;
+        if (Cfg_RegionsEntry const* region = sCfgRegionsStore.LookupEntry(realm.Id.Region))
+            raidOrigin = region->Raidorigin;
+
+        return (now - raidOrigin) / WEEK;
+    },
+
+    // WSE_FUNCTION_UNK13
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK14
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_DIFFICULTY_ID
+    [](Player const* player, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return player->GetMap()->GetDifficultyID();
+    },
+
+    // WSE_FUNCTION_WAR_MODE_ACTIVE
+    [](Player const* player, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return player->HasPlayerFlag(PLAYER_FLAGS_WAR_MODE_ACTIVE);
+    },
+
+    // WSE_FUNCTION_UNK17
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK18
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK19
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK20
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK21
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_WORLD_STATE_EXPRESSION
+    [](Player const* player, uint32 arg1, uint32 /*arg2*/) -> int32
+    {
+        if (WorldStateExpressionEntry const* worldStateExpression = sWorldStateExpressionStore.LookupEntry(arg1))
+            return ConditionMgr::IsPlayerMeetingExpression(player, worldStateExpression);
+
+        return 0;
+    },
+
+    // WSE_FUNCTION_KEYSTONE_AFFIX
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK24
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK25
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK26
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK27
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_KEYSTONE_LEVEL
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK29
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK30
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK31
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK32
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_MERSENNE_RANDOM
+    [](Player const* /*player*/, uint32 arg1, uint32 arg2) -> int32
+    {
+        if (arg1 == 1)
+            return 1;
+
+        // init with predetermined seed
+        std::mt19937 mt(arg2 ? arg2 : 1);
+        return mt() % arg1 + 1;
+    },
+
+    // WSE_FUNCTION_UNK34
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK35
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UNK36
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+    // WSE_FUNCTION_UI_WIDGET_DATA
+    [](Player const* /*player*/, uint32 /*arg1*/, uint32 /*arg2*/) -> int32
+    {
+        return 0;
+    },
+
+};
+
+int32 EvalSingleValue(ByteBuffer& buffer, Player const* player)
+{
+    WorldStateExpressionValueType valueType = buffer.read<WorldStateExpressionValueType>();
+    int32 value = 0;
+
+    switch (valueType)
+    {
+        case WorldStateExpressionValueType::Constant:
+        {
+            value = buffer.read<int32>();
+            break;
+        }
+        case WorldStateExpressionValueType::WorldState:
+        {
+            uint32 worldStateId = buffer.read<uint32>();
+            value = sWorld->getWorldState(worldStateId);
+            break;
+        }
+        case WorldStateExpressionValueType::Function:
+        {
+            uint32 functionType = buffer.read<uint32>();
+            int32 arg1 = EvalSingleValue(buffer, player);
+            int32 arg2 = EvalSingleValue(buffer, player);
+
+            if (functionType >= WSE_FUNCTION_MAX)
+                return 0;
+
+            value = WorldStateExpressionFunctions[functionType](player, arg1, arg2);
+        }
+        default:
+            break;
+    }
+
+    return value;
+}
+
+int32 EvalValue(ByteBuffer& buffer, Player const* player)
+{
+    int32 leftValue = EvalSingleValue(buffer, player);
+
+    WorldStateExpressionOperatorType operatorType = buffer.read<WorldStateExpressionOperatorType>();
+    if (operatorType == WorldStateExpressionOperatorType::None)
+        return leftValue;
+
+    int32 rightValue = EvalSingleValue(buffer, player);
+
+    switch (operatorType)
+    {
+        case WorldStateExpressionOperatorType::Sum:             return leftValue + rightValue;
+        case WorldStateExpressionOperatorType::Substraction:    return leftValue - rightValue;
+        case WorldStateExpressionOperatorType::Multiplication:  return leftValue * rightValue;
+        case WorldStateExpressionOperatorType::Division:        return !rightValue ? 0 : leftValue / rightValue;
+        case WorldStateExpressionOperatorType::Remainder:       return !rightValue ? 0 : leftValue % rightValue;
+        default:
+            break;
+    }
+
+    return leftValue;
+}
+
+bool EvalRelOp(ByteBuffer& buffer, Player const* player)
+{
+    int32 leftValue = EvalValue(buffer, player);
+
+    WorldStateExpressionComparisonType compareLogic = buffer.read<WorldStateExpressionComparisonType>();
+    if (compareLogic == WorldStateExpressionComparisonType::None)
+        return leftValue != 0;
+
+    int32 rightValue = EvalValue(buffer, player);
+
+    switch (compareLogic)
+    {
+        case WorldStateExpressionComparisonType::Equal:             return leftValue == rightValue;
+        case WorldStateExpressionComparisonType::NotEqual:          return leftValue != rightValue;
+        case WorldStateExpressionComparisonType::Less:              return leftValue <  rightValue;
+        case WorldStateExpressionComparisonType::LessOrEqual:       return leftValue <= rightValue;
+        case WorldStateExpressionComparisonType::Greater:           return leftValue >  rightValue;
+        case WorldStateExpressionComparisonType::GreaterOrEqual:    return leftValue >= rightValue;
+        default:
+            break;
+    }
+
+    return false;
+}
+
+bool ConditionMgr::IsPlayerMeetingExpression(Player const* player, WorldStateExpressionEntry const* expression)
+{
+    ByteBuffer buffer = HexToBytes(expression->Expression);
+    if (buffer.empty())
+        return false;
+
+    bool enabled = buffer.read<bool>();
+    if (!enabled)
+        return false;
+
+    bool finalResult = EvalRelOp(buffer, player);
+    WorldStateExpressionLogic resultLogic = buffer.read<WorldStateExpressionLogic>();
+
+    while (resultLogic != WorldStateExpressionLogic::None)
+    {
+        bool secondResult = EvalRelOp(buffer, player);
+
+        switch (resultLogic)
+        {
+            case WorldStateExpressionLogic::And: finalResult = finalResult && secondResult; break;
+            case WorldStateExpressionLogic::Or:  finalResult = finalResult || secondResult; break;
+            case WorldStateExpressionLogic::Xor: finalResult = finalResult != secondResult; break;
+            default:
+                break;
+        }
+
+        if (buffer.rpos() < buffer.size())
+            break;
+
+        resultLogic = buffer.read<WorldStateExpressionLogic>();
+    }
+
+    return finalResult;
 }

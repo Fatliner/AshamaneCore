@@ -1,20 +1,19 @@
 /*
-* Copyright (C) 2008-2017 TrinityCore <http://www.trinitycore.org/>
-*
-* This program is free software; you can redistribute it and/or modify it
-* under the terms of the GNU General Public License as published by the
-* Free Software Foundation; either version 2 of the License, or (at your
-* option) any later version.
-*
-* This program is distributed in the hope that it will be useful, but WITHOUT
-* ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-* FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-* more details.
-*
-* You should have received a copy of the GNU General Public License along
-
-* with this program. If not, see <http://www.gnu.org/licenses/>.
-*/
+ * Copyright (C) 2017-2019 AshamaneProject <https://github.com/AshamaneProject>
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation; either version 2 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
 
 #include "AreaTriggerAI.h"
 #include "ScriptedCreature.h"
@@ -41,7 +40,7 @@ public:
     struct mob_vileshard_crawler_AI : public ScriptedAI
     {
         mob_vileshard_crawler_AI(Creature* creature) : ScriptedAI(creature) {}
-        
+
         void JustDied(Unit* killer) override
         {
             me->CastSpell(killer, SPELL_ACID_SPLATTER, false);
@@ -140,7 +139,7 @@ public:
 
     struct mob_trigger_start_waterfall_AI : public ScriptedAI
     {
-        mob_trigger_start_waterfall_AI(Creature* creature) : ScriptedAI(creature) 
+        mob_trigger_start_waterfall_AI(Creature* creature) : ScriptedAI(creature)
         {
             me->SetVisible(false);
         }
@@ -196,7 +195,7 @@ public:
 
     struct mob_neltharionslair_trigger_AI : public ScriptedAI
     {
-        mob_neltharionslair_trigger_AI(Creature* creature) : ScriptedAI(creature) 
+        mob_neltharionslair_trigger_AI(Creature* creature) : ScriptedAI(creature)
         {
             me->SetVisible(false);
         }
@@ -429,7 +428,7 @@ public:
         {
             if (Creature* drudge = me->FindNearestCreature(NPC_UNDERSTONE_DRUDGE, 80.0f, true))
                 sCreatureTextMgr->SendChat(drudge, 1);
-            
+
             events.ScheduleEvent(EVENT_PIERCING_SHARDS, 5s);
             events.ScheduleEvent(EVENT_FRACTURE, 10s);
         }
@@ -569,7 +568,7 @@ public:
     {
         SPELL_RETREAT             = 226361,
         SPELL_JUGGED_DISK         = 183633
-        
+
     };
 
     struct mob_rockbound_pelter_AI : public ScriptedAI
@@ -628,7 +627,7 @@ public:
     enum eSpells
     {
         SPELL_STONE_SHUTTER       = 226347
-        
+
     };
 
     struct mob_stoneclaw_hunter_AI : public ScriptedAI
@@ -681,7 +680,7 @@ public:
     enum eSpells
     {
         SPELL_STONE_BOLT       = 186269
-        
+
     };
 
     struct mob_blightshard_shaper_AI : public ScriptedAI
@@ -736,7 +735,7 @@ public:
     {
         SPELL_LEECH             = 202230,
         SPELL_STONE_SHUTTER     = 226347,
-        
+
     };
 
     struct mob_stoneclaw_grubmaster_AI : public ScriptedAI

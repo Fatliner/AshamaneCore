@@ -60,19 +60,18 @@ private:
 class MoveSmoothPathEvent : public BasicEvent
 {
 public:
-    MoveSmoothPathEvent(Unit* scorpid, Movement::PointsArray points) : _scorpid(scorpid), _points(points) { }
+    MoveSmoothPathEvent(Unit* scorpid, Position const* points) : _scorpid(scorpid), _points(points) { }
 
     bool Execute(uint64 /*time*/, uint32 /*diff*/)
     {
         if (_scorpid && _scorpid->IsInWorld())
-            //_scorpid->GetMotionMaster()->MoveSmoothPath(1, _points, false);
-            return false;
+            _scorpid->GetMotionMaster()->MoveSmoothPath(1, _points, false);
         return true;
     }
 
 private:
     Unit* _scorpid;
-    Movement::PointsArray _points;
+    Position const* _points;
 };
 
 enum Spells
@@ -189,9 +188,7 @@ public:
             _JustDied();
             instance->SendEncounterUnit(ENCOUNTER_FRAME_DISENGAGE, me);
             if (instance->GetData(DATA_CAGE_REMATCH) == DONE)
-                if (AchievementEntry const* achievementEntry = sAchievementStore.LookupEntry(ACHIEVEMENT_CAGE_REMATCH))
-                    //instance->DoCompletedAchievement(achievementEntry);
-                    instance->DoCompleteAchievement(ACHIEVEMENT_CAGE_REMATCH);
+                instance->DoCompleteAchievement(ACHIEVEMENT_CAGE_REMATCH);
         }
 
         void DamageTaken(Unit* /*attacker*/, uint32& damage) override
@@ -260,7 +257,7 @@ public:
                 {
                     if (auto crystallineScorpid = me->SummonCreature(NPC_CRYSTALLINE_SCORPID, scorpidSpawnPosition, TEMPSUMMON_CORPSE_TIMED_DESPAWN, 10000))
                     {
-                        //crystallineScorpid->GetMotionMaster()->MoveSmoothPath(1, itr->second, false);
+                        crystallineScorpid->GetMotionMaster()->MoveSmoothPath(1, itr->second, false);
                         _scorpidsSummonMap[crystallineScorpid->GetGUID()] = itr->second;
                         _scorpidsSummonMap.erase(itr);
                     }
@@ -331,7 +328,7 @@ public:
         }
 
     private:
-        std::map<ObjectGuid, Movement::PointsArray> _scorpidsSummonMap;
+        std::map<ObjectGuid, Position const*> _scorpidsSummonMap;
         float _prevHealthForRemoveStack;
         uint8 _calcTime;
     };
@@ -558,7 +555,7 @@ public:
         void HandlePeriodic(AuraEffect const* /*aurEff*/)
         {
             if (Creature* caster = GetCaster()->ToCreature())
-                if (Unit* target = caster->AI()->SelectTarget(SELECT_TARGET_TOPAGGRO))
+                if (Unit* target = caster->AI()->SelectTarget(SELECT_TARGET_MAXTHREAT))
                     caster->CastSpell(target, SPELL_ARCANOSLASH_DAMAGE);
         }
 
@@ -984,7 +981,7 @@ public:
                 // Position in sniffs has no orientation
                 pos.SetOrientation(0.0f);
                 // Set distance for current line
-                MovePosition2D(pos, caster->GetObjectSize() + _distance * line, caster->GetOrientation());
+                MovePosition2D(pos, caster->GetCombatReach() + _distance * line, caster->GetOrientation());
 
                 // Safe for position values
                 BlastToRight(pos);

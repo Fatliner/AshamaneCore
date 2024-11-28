@@ -317,7 +317,7 @@ class boss_tectus : public CreatureScript
                             return;
 
                         me->SetAIAnimKitId(0);
-                        me->SetAIAnimKitId(eAnimKits::AnimRise, true);
+                        me->PlayOneShotAnimKitId(eAnimKits::AnimRise);
 
                         AddTimedDelayedOperation(4500, [this]() -> void
                         {
@@ -350,7 +350,7 @@ class boss_tectus : public CreatureScript
                         if (m_MoteKilled >= (eMiscs::MotesSpawnCount * 2))
                         {
                             me->SetAIAnimKitId(0);
-                            me->SetAIAnimKitId(eAnimKits::AnimRise, true);
+                            me->PlayOneShotAnimKitId(eAnimKits::AnimRise);
 
                             AddTimedDelayedOperation(4 * TimeConstants::IN_MILLISECONDS, [this]() -> void
                             {
@@ -548,7 +548,7 @@ class boss_tectus : public CreatureScript
                         break;
                     case eSpells::SpawnTectusShards:
                     {
-                        target->SetAIAnimKitId(eAnimKits::AnimRise2, true);
+                        target->PlayOneShotAnimKitId(eAnimKits::AnimRise2);
                         target->RestoreDisplayId();
 
                         ObjectGuid guid = target->GetGUID();
@@ -729,7 +729,7 @@ class boss_tectus : public CreatureScript
                     }
                     case eEvents::EventCrystallineBarrage:
                     {
-                        Unit* target = SelectTarget(SELECT_TARGET_FARTHEST, 0);
+                        Unit* target = SelectTarget(SELECT_TARGET_MAXDISTANCE, 0);
 
                         if (target == nullptr)
                             target = SelectTarget(SELECT_TARGET_RANDOM, 0, 60, true);
@@ -791,7 +791,7 @@ class boss_tectus : public CreatureScript
                     {
                         Talk(eTalks::EarthenPillar);
 
-                        if (Unit* target = SelectTarget(SELECT_TARGET_FARTHEST, 0))
+                        if (Unit* target = SelectTarget(SELECT_TARGET_MAXDISTANCE, 0))
                             me->SummonCreature(eCreatures::EarthenPillarStalker, target->GetPositionX(), target->GetPositionY(), me->GetPositionZ());
                         // If no ranged damage dealer found, target random
                         else if (Unit* victim = SelectTarget(SELECT_TARGET_RANDOM, 0, 60, true))
@@ -889,7 +889,7 @@ class boss_tectus : public CreatureScript
 
             void SpawnAdd(uint32 p_Entry)
             {
-                if (Unit* target = SelectTarget(SelectAggroTarget::SELECT_TARGET_FARTHEST, 0, 70.0f, true))
+                if (Unit* target = SelectTarget(SelectAggroTarget::SELECT_TARGET_MAXDISTANCE, 0, 70.0f, true))
                 {
                     float l_O = frand(0.f, 2.f * float(M_PI));
                     float l_Range = 5.0f;
@@ -1103,7 +1103,7 @@ class npc_highmaul_rokka_and_lokk : public CreatureScript
                 {
                     m_Risen = true;
                     me->SetAIAnimKitId(0);
-                    me->SetAIAnimKitId(eAnimKit::AnimRise, true);
+                    me->PlayOneShotAnimKitId(eAnimKit::AnimRise);
 
                     AddTimedDelayedOperation(4500, [this]() -> void
                     {
@@ -1248,7 +1248,7 @@ class npc_highmaul_oro : public CreatureScript
                 {
                     m_Risen = true;
                     me->SetAIAnimKitId(0);
-                    me->SetAIAnimKitId(eAnimKit::AnimRise, true);
+                    me->PlayOneShotAnimKitId(eAnimKit::AnimRise);
 
                     AddTimedDelayedOperation(4500, [this]() -> void
                     {

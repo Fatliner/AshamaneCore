@@ -36,6 +36,7 @@
 #include "Unit.h"
 #include "ObjectAccessor.h"
 #include "MotionMaster.h"
+#include <G3D/Vector3.h>
 
 enum Spells
 {
@@ -139,11 +140,13 @@ public:
 
         void StartCyclePath()
         {
+            Movement::PointsArray path(WaypointChronomaticAnomaly, WaypointChronomaticAnomaly + WaypointChronomaticAnomalySize);
+
             Movement::MoveSplineInit init(me);
             init.SetCyclic();
             init.SetSmooth();
             init.SetVelocity(4.0f);
-            init.MovebyPath(WaypointChronomaticAnomaly, 0);
+            init.MovebyPath(path, 0);
             init.Launch();
         }
 
@@ -334,7 +337,7 @@ public:
                         me->CastSpell(temporalOrbsSpawnPosition.GetPositionX(), temporalOrbsSpawnPosition.GetPositionY(), temporalOrbsSpawnPosition.GetPositionZ(), SPELL_TEMPORAL_ORB_AREATRIGGER_FIRST, true);
                     for (auto at : me->GetAreaTriggers(SPELL_TEMPORAL_ORB_AREATRIGGER_FIRST))
                     {
-//                        at->AI()->DoAction(_triggersCount);
+                        at->AI()->DoAction(_triggersCount);
                         _triggersCount++;
                     }
                     DoCast(SPELL_TEMPORAL_ORBS_PERIODIC);
@@ -344,7 +347,7 @@ public:
                         me->CastSpell(temporalOrbsSpawnPosition.GetPositionX(), temporalOrbsSpawnPosition.GetPositionY(), temporalOrbsSpawnPosition.GetPositionZ(), SPELL_TEMPORAL_ORB_AREATRIGGER_SECOND, true);
                     for (auto at : me->GetAreaTriggers(SPELL_TEMPORAL_ORB_AREATRIGGER_SECOND))
                     {
- //                       at->AI()->DoAction(_triggersCount);
+                        at->AI()->DoAction(_triggersCount);
                         _triggersCount++;
                     }
                     break;
@@ -437,7 +440,7 @@ public:
                 switch (eventId)
                 {
                 case EVENT_CHRONOMATE:
-                    if (auto target = SelectTarget(SELECT_TARGET_TOPAGGRO, 0, 0, true))
+                    if (auto target = SelectTarget(SELECT_TARGET_MAXTHREAT, 0, 0, true))
                         DoCast(target, SPELL_CHRONOMATE);
                     else if (auto target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0, true))
                         DoCast(target, SPELL_CHRONOMATE);
@@ -509,7 +512,7 @@ public:
                 switch (eventId)
                 {
                 case EVENT_CHRONOMATE:
-                    if (auto target = SelectTarget(SELECT_TARGET_TOPAGGRO, 0, 0, true))
+                    if (auto target = SelectTarget(SELECT_TARGET_MAXTHREAT, 0, 0, true))
                         DoCast(target, SPELL_CHRONOMATE);
                     else if (auto target = SelectTarget(SELECT_TARGET_RANDOM, 0, 0, true))
                         DoCast(target, SPELL_CHRONOMATE);

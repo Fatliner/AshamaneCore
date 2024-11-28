@@ -1,6 +1,5 @@
 /*
- * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
- * Copyright (C) 2006-2009 ScriptDev2 <https://scriptdev2.svn.sourceforge.net/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -25,12 +24,14 @@ EndScriptData */
 
 #include "ScriptMgr.h"
 #include "GameObject.h"
+#include "GameObjectAI.h"
 #include "InstanceScript.h"
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
 #include "serpent_shrine.h"
 #include "TemporarySummon.h"
+#include <sstream>
 
 #define MAX_ENCOUNTER 6
 
@@ -126,42 +127,37 @@ class instance_serpent_shrine : public InstanceMapScript
                     else
                         Water = WATERSTATE_FRENZY;
 
-                    Map::PlayerList const &PlayerList = instance->GetPlayers();
-                    if (PlayerList.isEmpty())
-                        return;
-                    for (Map::PlayerList::const_iterator i = PlayerList.begin(); i != PlayerList.end(); ++i)
+                    DoOnPlayers([this](Player* player)
                     {
-                        if (Player* player = i->GetSource())
+                        if (player->IsAlive() && /*i->GetSource()->GetPositionZ() <= -21.434931f*/player->IsInWater())
                         {
-                            if (player->IsAlive() && /*i->GetSource()->GetPositionZ() <= -21.434931f*/player->IsInWater())
+                            if (Water == WATERSTATE_SCALDING)
                             {
-                                if (Water == WATERSTATE_SCALDING)
+                                if (!player->HasAura(SPELL_SCALDINGWATER))
                                 {
-
-                                    if (!player->HasAura(SPELL_SCALDINGWATER))
-                                    {
-                                        player->CastSpell(player, SPELL_SCALDINGWATER, true);
-                                    }
-                                } else if (Water == WATERSTATE_FRENZY)
-                                {
-                                    //spawn frenzy
-                                    if (DoSpawnFrenzy)
-                                    {
-                                        if (Creature* frenzy = player->SummonCreature(NPC_COILFANG_FRENZY, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 2000))
-                                        {
-                                            frenzy->Attack(player, false);
-                                            frenzy->SetSwim(true);
-                                            frenzy->SetDisableGravity(true);
-                                        }
-                                        DoSpawnFrenzy = false;
-                                    }
+                                    player->CastSpell(player, SPELL_SCALDINGWATER, true);
                                 }
                             }
-                            if (!player->IsInWater())
-                                player->RemoveAurasDueToSpell(SPELL_SCALDINGWATER);
+                            else if (Water == WATERSTATE_FRENZY)
+                            {
+                                //spawn frenzy
+                                if (DoSpawnFrenzy)
+                                {
+                                    if (Creature* frenzy = player->SummonCreature(NPC_COILFANG_FRENZY, player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetOrientation(), TEMPSUMMON_TIMED_DESPAWN_OUT_OF_COMBAT, 2000))
+                                    {
+                                        frenzy->Attack(player, false);
+                                        frenzy->SetSwim(true);
+                                        frenzy->SetDisableGravity(true);
+                                    }
+                                    DoSpawnFrenzy = false;
+                                }
+                            }
                         }
 
-                    }
+                        if (!player->IsInWater())
+                            player->RemoveAurasDueToSpell(SPELL_SCALDINGWATER);
+                    });
+
                     WaterCheckTimer = 500;//remove stress from core
                 }
                 else
@@ -386,7 +382,7 @@ class instance_serpent_shrine : public InstanceMapScript
                 return stream.str();
             }
 
-            void Load(const char* in) override
+            void Load(char const* in) override
             {
                 if (!in)
                 {

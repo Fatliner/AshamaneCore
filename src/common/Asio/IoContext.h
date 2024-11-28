@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008-2019 TrinityCore <https://www.trinitycore.org/>
+ * This file is part of the TrinityCore Project. See AUTHORS file for Copyright information
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -47,10 +47,13 @@ namespace Trinity
             std::size_t run() { return _impl.run(); }
             bool stopped() { return _impl.stopped(); }
             void stop() { _impl.stop(); }
-            void restart() { _impl.restart(); }
 
 #if BOOST_VERSION >= 106600
+            void restart() { _impl.restart(); }
+
             boost::asio::io_context::executor_type get_executor() noexcept { return _impl.get_executor(); }
+#else
+            void reset() { _impl.reset(); }
 #endif
 
         private:

@@ -193,7 +193,7 @@ class npc_vha_spitting_scarab : public CreatureScript
             _anubesset = nullptr;
             _poisonTimer = 0;
 
-            if (SpellInfo const * spell = sSpellMgr->GetSpellInfo(SPELL_BURROW))
+            if (SpellInfo const * spell = sSpellMgr->GetSpellInfo(SPELL_BURROW, me->GetMap()->GetDifficultyID()))
             {
                 Position burrow_pos = me->GetRandomNearPosition(spell->GetEffect(EFFECT_0)->RadiusEntry->Radius);
                 me->CastSpell(burrow_pos.GetPositionX(), burrow_pos.GetPositionY(), burrow_pos.GetPositionZ(), SPELL_BURROW, true);
@@ -262,7 +262,7 @@ class npc_vha_blistering_bettle : public CreatureScript
                 me->SetReactState(REACT_PASSIVE);
             }
 
-            void IsSummonedBy(Unit* summoner)
+            void IsSummonedBy(Unit* summoner) override
             {
                 if (summoner && summoner->ToCreature())
                     _anubesset = summoner->ToCreature();
